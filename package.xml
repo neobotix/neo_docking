@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>neo_docking</name>
+  <version>0.0.1</version>
+  <description>The neo_docking package</description>
+
+  <maintainer email="ros@neobotix.de">Neobotix</maintainer>
+  <url type="website">http://www.neobotix-robots.com</url>
+  <author>Zihao He</author>
+  <author>Jan-Niklas Nieland</author>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <build_depend>rospy</build_depend>
+  <build_depend>cv_bridge</build_depend>
+  <build_depend>opencv2</build_depend>
+  <build_depend>std_msgs</build_depend>
+  <build_depend>message_generation</build_depend>
+  <build_export_depend>rospy</build_export_depend>
+  <build_export_depend>std_msgs</build_export_depend>
+  <build_export_depend>cv_bridge</build_export_depend>
+  <build_export_depend>opencv2</build_export_depend>
+
+  <exec_depend>rospy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>message_runtime</exec_depend>
+  <exec_depend>cv_bridge</exec_depend>
+  <exec_depend>opencv2</exec_depend>
+
+</package>

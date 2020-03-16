@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<launch>
+	<arg name="marker_size" default="12" />
+	<arg name="max_new_marker_error" default="0.1" />
+	<arg name="max_track_error" default="0.2" />
+	<arg name="cam_image_topic" default="/camera/depth_registered/points" />
+	<arg name="cam_info_topic" default="/camera/depth/camera_info" />
+	<arg name="output_frame" default="/camera_depth_frame" />
+	<arg name="med_filt_size" default="15" />
+	<node name="ar_track_alvar" pkg="ar_track_alvar" type="individualMarkers" respawn="false" args="$(arg marker_size) $(arg max_new_marker_error) $(arg max_track_error) $(arg cam_image_topic) $(arg cam_info_topic) $(arg output_frame)" />
+	<!--node name="pose_filter" pkg="neo_docking" type="pose_filter.py" output="screen" /-->
+</launch>

@@ -1,0 +1,8 @@
+<?xml version='1.0'?>
+
+<!-- Load Parameters -->
+
+<!-- Launch Node -->
+<launch>
+	<node name="auto_docking" pkg="neo_docking" type="auto_dock.py" output="screen"/>
+</launch>
