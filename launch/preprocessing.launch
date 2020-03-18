@@ -4,5 +4,5 @@
 
 <!-- Launch Node -->
 <launch>
-	<node name="auto_docking" pkg="neo_docking" type="auto_dock.py" output="screen"/>
+	<node name="preprocessing" pkg="neo_docking" type="pose_filter.py" output="screen"/>
 </launch>

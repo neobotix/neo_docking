@@ -154,6 +154,7 @@ if __name__ == "__main__":
 			filtered_orient_vec = my_filter.avr(my_filter.orientation_queue)
 			filtered_pose = my_filter.pose_from_vec(filtered_position_vec, filtered_orient_vec)
 			my_filter.filtered_pose_pub.publish(filtered_pose)
+			#my_filter.filtered_pose_pub.publish(my_filter.marker_pose_calibrated)
 			# discard the oldest element in queue
 			if(len(my_filter.position_queue) == 15):
 				my_filter.position_queue.pop(0)

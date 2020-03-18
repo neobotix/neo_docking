@@ -1,0 +1,13 @@
+<?xml version='1.0'?>
+<launch>
+	<!-- Load Parameters -->
+	<arg name="x_max" default="Inf"/>
+	<arg name="x_min" default="0.15"/>
+	<arg name="y_max" default="Inf"/>
+	<arg name="y_min" default="0.15"/>
+	<arg name="tolerance" default="0.003"/>
+	<arg name="angular_min" default="0.1"/>
+
+	<!-- Launch Node -->
+	<node name="auto_docking" pkg="neo_docking" type="auto_dock.py" args="$(arg x_max) $(arg x_min) $(arg y_max) $(arg y_min) $(arg tolerance) $(arg angular_min)" output="screen"/>
+</launch>

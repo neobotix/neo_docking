@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import sys
 import time
 import rospy
 import tf2_ros
@@ -17,6 +18,12 @@ class Docking:
 		self.kp_x = 0.3
 		self.kp_y = 1.5
 		self.kp_theta = 0.5
+		self.x_max = None
+		self.x_min = None
+		self.y_max = None
+		self.y_min = None
+		self.tolerance = None
+		self.angular_min = None
 		#self.state = 1
 		self.start = 0
 		self.base_pose = PoseStamped()
@@ -88,21 +95,21 @@ class Docking:
 				if(abs(self.diff_x) < 0.70 or time_waited > 10):
 					self.vel.linear.x = 0
 				else:
-					self.vel.linear.x = min(max(self.kp_x * self.diff_x, 0.05), 0.1)
+					self.vel.linear.x = min(max(self.kp_x * self.diff_x, 2*self.x_min), self.x_max)
 			else:
 				self.vel.linear.y = self.kp_y * self.diff_y
 				# defining the minimal cmd_vel on y-direction
-				if abs(self.vel.linear.y) < 0.03:
-					self.vel.linear.y = 0.03 * np.sign(self.vel.linear.y)
-				elif abs(self.vel.linear.y) > 0.05:
-					self.vel.linear.y = 0.05 * np.sign(self.vel.linear.y)
+				if abs(self.vel.linear.y) < 1.5 * self.y_min:
+					self.vel.linear.y = 1.5 * self.y_min * np.sign(self.vel.linear.y)
+				elif abs(self.vel.linear.y) > self.y_max:
+					self.vel.linear.y = self.y_max * np.sign(self.vel.linear.y)
 		# filter out shakes from AR tracking package
 		elif(abs(np.degrees(self.diff_theta)) > 65):
 			self.vel.angular.z = 0.005 * np.sign(self.diff_theta)
 		else:
 			self.vel.angular.z = self.kp_theta * self.diff_theta
-			if(abs(self.vel.angular.z) < 0.02):
-				self.vel.angular.z = 0.02 * np.sign(self.vel.angular.z)
+			if(abs(self.vel.angular.z) < self.angular_min):
+				self.vel.angular.z = self.angular_min * np.sign(self.vel.angular.z)
 		state = self.vel.linear.x + self.vel.linear.y + self.vel.angular.z
 		# check if the 1st phase of docking is done
 		if(state == 0): 
@@ -125,22 +132,22 @@ class Docking:
 		# use a larger threshold when in last step, because the noise of visual feedback always makes vel.linear.y jumps between some value and 0
 		# which destroyed the priority of y
 		if(self.LAST_STEP):
-			tolerance = 0.005
+			tolerance = self.tolerance
 		else:
-			tolerance = 0.003
+			tolerance = 0.5 * self.tolerance
 		if(abs(self.diff_y) > tolerance):
 			vel.linear.y = kp_y * self.diff_y
-			if abs(vel.linear.y) < 0.01:
-				vel.linear.y = 0.01 * np.sign(vel.linear.y)
-			elif abs(vel.linear.y > 0.04):
-				vel.linear.y = 0.04 * np.sign(vel.linear.y)
+			if abs(vel.linear.y) < self.y_min:
+				vel.linear.y = self.y_min * np.sign(vel.linear.y)
+			elif abs(vel.linear.y > 0.8 * self.y_max):
+				vel.linear.y = 0.8 * self.y_max * np.sign(vel.linear.y)
 			vel.linear.x = 0
 		else:
 			self.LAST_STEP = True
 			vel.linear.y = 0
 			# correspondent: montage x = +25cm
 			if(self.diff_x - 0.55 > 0.01):
-				vel.linear.x = min(max(kp_x * (self.diff_x - 0.30), 0.03), 0.05)
+				vel.linear.x = min(max(kp_x * (self.diff_x - 0.30), self.x_min), 2*self.x_min)
 			else:
 				vel.linear.x = 0
 				vel.linear.y = 0
@@ -148,8 +155,8 @@ class Docking:
 					vel.angular.z = 0
 				else:
 					vel.angular.z = 0.2 * self.kp_theta * self.diff_theta
-					if(abs(self.vel.angular.z) < 0.02):
-						self.vel.angular.z = 0.02 * np.sign(self.vel.angular.z)
+					if(abs(vel.angular.z) < self.angular_min):
+						vel.angular.z = self.angular_min * np.sign(vel.angular.z)
 		self.vel_pub.publish(vel)
 		# check if the process is done
 		if(not (vel.linear.x + vel.linear.y + vel.angular.z)):
@@ -158,11 +165,28 @@ class Docking:
 			print("Connection established.")
 
 if __name__ == '__main__':
-	my_docking = Docking()
-	while(not rospy.is_shutdown()):
-		# start docking when service is called
-		# make sure marker is detected
-		if(my_docking.marker_pose_calibrated.pose.position.x and rospy.get_param('docking')):
-			my_docking.calculate_diff()
-			my_docking.auto_docking()
-		my_docking.rate.sleep()
+	if(len(sys.argv) == 9):
+		my_docking = Docking()
+		if(sys.argv[1]=="Inf"):
+			my_docking.x_max = 5
+		else:
+			my_docking.x_max = float(sys.argv[1])
+		my_docking.x_min = float(sys.argv[2])
+		if(sys.argv[3]=="Inf"):
+			my_docking.y_max = 5
+		else:
+			my_docking.y_max = float(sys.argv[3])
+		my_docking.y_min = float(sys.argv[4])
+		my_docking.tolerance = float(sys.argv[5])
+		my_docking.angular_min = float(sys.argv[6])
+		print(my_docking.angular_min)
+		while(not rospy.is_shutdown()):
+			# start docking when service is called
+			# make sure marker is detected
+			if(my_docking.marker_pose_calibrated.pose.position.x and rospy.get_param('docking')):
+				my_docking.calculate_diff()
+				my_docking.auto_docking()
+			my_docking.rate.sleep()
+
+	else:
+		print("Argument(s) missing.")

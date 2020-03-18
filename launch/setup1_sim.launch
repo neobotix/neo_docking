@@ -1,11 +1,8 @@
 <?xml version='1.0'?>
 
 <launch>
-	<!-- AMCL -->
-	<include file="$(find neo_mpo_700)/configs/navigation/amcl/amcl_basic.launch" />
-
 	<!-- Intel Real Sense -->
-	<include file="$(find neo_docking)/launch/realsense.launch"/>
+	<!-- <include file="$(find neo_docking)/launch/realsense.launch"/> -->
 
 	<!-- Marker detection -->
 	<include file="$(find neo_docking)/launch/ar_track_alvar_single.launch"/>
@@ -14,5 +11,5 @@
 	<include file="$(find neo_docking)/launch/preprocessing.launch"/>
 
 	<!-- Auto Docking -->
-	<include file="$(find neo_docking)/launch/auto_docking.launch"/>
+	<include file="$(find neo_docking)/launch/auto_docking_sim.launch"/>
 </launch>
