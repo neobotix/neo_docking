@@ -78,7 +78,7 @@ class Docking:
 		print("Difference: ["+str(self.diff_x)+", "+str(self.diff_y)+", "+str(np.degrees(self.diff_theta))+"]")
 		
 	# execute the first phase of docking process
-	def auto_docking(self):
+	def locate(self):
 		self.vel = Twist()
 		# calculate the velocity needed for docking
 		time_waited = time.time() - self.start
@@ -114,12 +114,12 @@ class Docking:
 		# check if the 1st phase of docking is done
 		if(state == 0): 
 			#print("start visual servo.")
-			self.visual_servo()
+			self.dock()
 		else:
 			self.vel_pub.publish(self.vel)
 
-	# second phase of docking, directly using visual information
-	def visual_servo(self):
+	# second phase of docking, serves for accuracy
+	def dock(self):
 		kp_x = 0.5
 		kp_y = 3.0
 		vel = Twist()
@@ -185,7 +185,7 @@ if __name__ == '__main__':
 			# make sure marker is detected
 			if(my_docking.marker_pose_calibrated.pose.position.x and rospy.get_param('docking')):
 				my_docking.calculate_diff()
-				my_docking.auto_docking()
+				my_docking.locate()
 			my_docking.rate.sleep()
 
 	else:

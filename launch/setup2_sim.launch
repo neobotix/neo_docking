@@ -1,0 +1,15 @@
+<?xml version='1.0'?>
+
+<launch>
+	<!-- Intel Real Sense -->
+	<!-- <include file="$(find neo_docking)/launch/realsense.launch"/> -->
+
+	<!-- Marker detection -->
+	<include file="$(find neo_docking)/launch/ar_track_alvar_bundle.launch"/>
+
+	<!-- Preprocessing -->
+	<include file="$(find neo_docking)/launch/preprocessing.launch"/>
+
+	<!-- Auto Docking -->
+	<include file="$(find neo_docking)/launch/auto_docking_sim.launch"/>
+</launch>
