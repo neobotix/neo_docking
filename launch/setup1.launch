@@ -1,9 +1,6 @@
 <?xml version='1.0'?>
 
 <launch>
-	<!-- AMCL -->
-	<include file="$(find neo_mpo_700)/configs/navigation/amcl/amcl_basic.launch" />
-
 	<!-- Intel Real Sense -->
 	<include file="$(find neo_docking)/launch/realsense.launch"/>
 
