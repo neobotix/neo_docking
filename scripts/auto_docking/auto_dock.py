@@ -92,7 +92,7 @@ class Docking:
 			self.vel.angular.z = 0
 			if(abs(self.diff_y) < 0.05 or time_waited > 10):
 				self.vel.linear.y = 0
-				if(abs(self.diff_x) < 0.70 or time_waited > 10):
+				if(abs(self.diff_x) < 0.722 or time_waited > 10):
 					self.vel.linear.x = 0
 				else:
 					self.vel.linear.x = min(max(self.kp_x * self.diff_x, 2*self.x_min), self.x_max)
@@ -146,7 +146,7 @@ class Docking:
 			self.LAST_STEP = True
 			vel.linear.y = 0
 			# correspondent: montage x = +25cm
-			if(self.diff_x - 0.55 > 0.01):
+			if(self.diff_x - 0.572 > 0.01):
 				vel.linear.x = min(max(kp_x * (self.diff_x - 0.30), self.x_min), 2*self.x_min)
 			else:
 				vel.linear.x = 0
