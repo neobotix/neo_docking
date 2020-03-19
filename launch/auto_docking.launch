@@ -9,5 +9,5 @@
 	<arg name="angular_min" default="0.02"/>
 
 	<!-- Launch Node -->
-	<node name="auto_docking" pkg="neo_docking" type="auto_dock.py" output="screen"/>
+	<node name="auto_docking" pkg="neo_docking" type="auto_dock.py" args="$(arg x_max) $(arg x_min) $(arg y_max) $(arg y_min) $(arg tolerance) $(arg angular_min)" output="screen"/>
 </launch>
