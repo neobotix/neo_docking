@@ -8,49 +8,186 @@ import numpy as np
 import tf2_geometry_msgs
 from nav_msgs.msg import Odometry
 from neo_docking.srv import auto_docking
-from tf.transformations import euler_from_quaternion
+from ar_track_alvar_msgs.msg import AlvarMarkers
+from tf.transformations import euler_from_quaternion, quaternion_from_euler
 from geometry_msgs.msg import TransformStamped, PoseStamped, Vector3, Twist
 
 class Docking:
 	# initialization
 	def __init__(self):
 		# initial values of parameters
-		self.kp_x = 0.3
-		self.kp_y = 1.5
-		self.kp_theta = 0.5
-		self.x_max = None
-		self.x_min = None
-		self.y_max = None
-		self.y_min = None
-		self.tolerance = None
-		self.angular_min = None
-		#self.state = 1
+		self.node_name = 'auto_docking'
+		self.kp_x = rospy.get_param('/'+self.node_name+'/kp/x')
+		self.kp_y = rospy.get_param('/'+self.node_name+'/kp/y')
+		self.kp_theta = rospy.get_param('/'+self.node_name+'/kp/theta')
+		self.x_max = rospy.get_param('/'+self.node_name+'/velocity/linear/x/max')
+		self.x_min = rospy.get_param('/'+self.node_name+'/velocity/linear/x/min')
+		self.y_max = rospy.get_param('/'+self.node_name+'/velocity/linear/y/max')
+		self.y_min = rospy.get_param('/'+self.node_name+'/velocity/linear/y/min')
+		self.tolerance = rospy.get_param('/'+self.node_name+'/tolerance/y')
+		self.angular_min = rospy.get_param('/'+self.node_name+'/velocity/angular/min')
 		self.start = 0
 		self.base_pose = PoseStamped()
+		self.marker_pose = PoseStamped()
 		self.marker_pose_calibrated = PoseStamped()
 		self.base_marker_diff = PoseStamped()
+		self.marker_list = []
+		self.marker_list_printed = []
+		self.STATION_NR = None
 		# initializing node, subscribers, publishers and servcer
-		rospy.init_node('auto_docking')
+		rospy.init_node(self.node_name)
 		self.rate = rospy.Rate(15)
 		self.tf_buffer = tf2_ros.Buffer(rospy.Duration(1200.0))
 		listener = tf2_ros.TransformListener(self.tf_buffer)
 		odom_sub = rospy.Subscriber('odom', Odometry, self.odom_callback)
-		marker_pose_sub = rospy.Subscriber('ar_pose_filtered', PoseStamped, self.pose_callback)
+		pose_sub = rospy.Subscriber('ar_pose_marker', AlvarMarkers, self.marker_pose_calibration)
+		server = rospy.Service(self.node_name, auto_docking, self.service_callback)
 		rospy.loginfo("auto_docking service is ready.")
 		self.vel_pub = rospy.Publisher('cmd_vel', Twist, queue_size=1)
-		self.ar_pose_corrected_pub = rospy.Publisher('ar_pose_corrected', PoseStamped, queue_size=1)
+		#self.ar_pose_corrected_pub = rospy.Publisher('ar_pose_corrected', PoseStamped, queue_size=1)
+		self.ar_pose_filtered_pub = rospy.Publisher('ar_pose_filtered', PoseStamped, queue_size=1)
+		
 		# in test
 		self.LAST_STEP = False
+		# load markers into a list, as reference of detection
+		i = 0
+		self.defined_markers = []
+		while(True):
+			i += 1
+			try:
+				marker = rospy.get_param('/ar_track_alvar/marker_'+str(i))
+				marker = int(marker)
+				self.defined_markers.append(marker)
+			except:
+				l = len(self.defined_markers)
+				if(l):
+					print(str(l)+" markers are loaded.")
+				else:
+					print("No marker is defined.")
+				break
 
+	# functions for pose transformation
+	# establish the rotation matrix from euler angle
+	def mat_from_euler(self, euler):
+		alpha = euler[0]
+		beta = euler[1]
+		gamma = euler[2]
+		sa = np.sin(alpha)		# wrt x-axis
+		ca = np.cos(alpha)
+		sb = np.sin(beta)		# wrt y-axis
+		cb = np.cos(beta)
+		sr = np.sin(gamma)		# wrt z-axis
+		cr = np.cos(gamma)
+		# euler rotation matrix
+		mat = [[cb*cr, sa*sb*cr - ca*sr, ca*sb*cr + sa*sr], [cb*sr, sa*sb*sr + ca*cr, ca*sb*sr - sa*cr], [-sb, sa*cb, ca*cb]]
+		return mat		
+
+	# transform measured marker pose into something comparable with robot coordinate system
+	def do_calibration(self, marker):
+		# correct the published orientation of marker
+		# in convinience of calculating the error of orientation between marker & base_link
+		cam_to_map = self.tf_buffer.lookup_transform('map', 'camera_link', rospy.Time(0), rospy.Duration(1.0))
+		marker_in_map = tf2_geometry_msgs.do_transform_pose(marker, cam_to_map)
+		# do the rotation with euler rotation matrix
+		marker_in_map_euler = euler_from_quaternion([marker_in_map.pose.orientation.x, marker_in_map.pose.orientation.y, marker_in_map.pose.orientation.z, marker_in_map.pose.orientation.w])
+		marker_in_map_mat = self.mat_from_euler(marker_in_map_euler)
+		y_axis_of_map = [[0], [1], [0]]
+		axis_of_correction = np.dot(marker_in_map_mat, y_axis_of_map)
+		correction_quaternion = np.zeros(4)
+		correction_quaternion[0] = np.sin(0.785398)*axis_of_correction[0]
+		correction_quaternion[1] = np.sin(0.785398)*axis_of_correction[1]
+		correction_quaternion[2] = np.sin(0.785398)*axis_of_correction[2]
+		correction_quaternion[3] = np.cos(0.785398)
+		# calculate transformation with built-in function
+		marker_correction = TransformStamped()
+		marker_correction.header.stamp = rospy.Time.now()
+		marker_correction.header.frame_id = 'map'
+		marker_correction.transform.rotation.x = correction_quaternion[0]
+		marker_correction.transform.rotation.y = correction_quaternion[1]
+		marker_correction.transform.rotation.z = correction_quaternion[2]
+		marker_correction.transform.rotation.w = correction_quaternion[3]
+		marker_corrected = tf2_geometry_msgs.do_transform_pose(marker_in_map, marker_correction)
+		marker_corrected.pose.position = marker_in_map.pose.position
+		# ignore row & pitch of marker coordinate system
+		euler_vec = euler_from_quaternion([marker_corrected.pose.orientation.x, marker_corrected.pose.orientation.y, marker_corrected.pose.orientation.z, marker_corrected.pose.orientation.w])
+		orient_vec = quaternion_from_euler(0, 0, euler_vec[2])
+		marker_corrected.pose.orientation.x = orient_vec[0]
+		marker_corrected.pose.orientation.y = orient_vec[1]
+		marker_corrected.pose.orientation.z = orient_vec[2]
+		marker_corrected.pose.orientation.w = orient_vec[3]
+		return marker_corrected
+
+	# callback function: transforms measured marker pose into something comparable with robot coordinate system
+	def marker_pose_calibration(self, ar_markers):
+		#self.marker_pose_calibrated = PoseStamped()
+		self.marker_list = []
+		for mkr in ar_markers.markers:
+			# push every qualified & detected marker into the list
+			if(not mkr.id in self.marker_list) and (mkr.id in self.defined_markers):
+				self.marker_list.append(mkr.id)
+			if(mkr.id == self.STATION_NR):
+			# read pose data of the predefined marker
+				self.marker_pose = mkr.pose
+				self.marker_pose.header.frame_id = 'camera_link'
+				# do rotation, and remove unused information
+				self.marker_pose_calibrated = self.do_calibration(self.marker_pose)
+
+	# following functions serve for temporal Sliding Window
+	# pack the PoseStamped into vector
+	def vec_from_pose(self, pose):
+		position_vec =  []
+		orient_vec = []
+		position_vec.append(pose.position.x)
+		position_vec.append(pose.position.y)
+		position_vec.append(pose.position.z)
+		orient_vec.append(pose.orientation.x)
+		orient_vec.append(pose.orientation.y)
+		orient_vec.append(pose.orientation.z)
+		orient_vec.append(pose.orientation.w)
+		return [position_vec, orient_vec]
+
+	# unpack the vector into PoseStamped
+	def pose_from_vec(self, p_vec, o_vec):
+		pose = PoseStamped()
+		pose.header.stamp = rospy.Time.now()
+		pose.header.frame_id = "map"
+		pose.pose.position.x = p_vec[0]
+		pose.pose.position.y = p_vec[1]
+		pose.pose.position.z = p_vec[2]
+		pose.pose.orientation.x = o_vec[0]
+		pose.pose.orientation.y = o_vec[1]
+		pose.pose.orientation.z = o_vec[2]
+		pose.pose.orientation.w = o_vec[3]
+		return pose
+
+	# average value of each vec in a matrix
+	def avr(self, mat):
+		if(len(mat)<2):
+			return mat[0]
+		ans = []
+		l = len(mat[0])
+		for i in range(l):
+			s = 0
+			for vec in mat:
+				s += vec[i]
+			ans.append(s/len(mat))
+		return ans
+
+	# the callback function of service auto_docking
+	def service_callback(self, auto_docking):
+		self.STATION_NR = auto_docking.station_nr
+		self.position_queue = []
+		self.orientation_queue = []
+		rospy.set_param('docking', True)
+		print("Service request received.")
+		return "Service requested."	
+
+	# functions for autonomous docking
 	# callback function of odom_sub
 	def odom_callback(self, odom):
 		# restore measured odom info from nav_msgs/Odometry into geometry_msgs/PoseStamped format
 		self.base_pose.header = odom.header
 		self.base_pose.pose = odom.pose.pose
-
-	# callback function of filtered_pose_sub
-	def pose_callback(self, filtered_pose):
-		self.marker_pose_calibrated = filtered_pose
 
 	# calculating displacement between marker and robot			
 	def calculate_diff(self):
@@ -120,8 +257,9 @@ class Docking:
 
 	# second phase of docking, serves for accuracy
 	def dock(self):
-		kp_x = 0.5
-		kp_y = 3.0
+		kp_x = rospy.get_param('/'+self.node_name+'/kp/x_fine')
+		kp_y = rospy.get_param('/'+self.node_name+'/kp/y_fine')
+		kp_theta = rospy.get_param('/'+self.node_name+'/kp/theta_fine')
 		vel = Twist()
 		# in case the 2nd docking process failed
 		if(abs(np.degrees(self.diff_theta)) > 5 or self.diff_y > 0.02):
@@ -165,28 +303,30 @@ class Docking:
 			print("Connection established.")
 
 if __name__ == '__main__':
-	if(len(sys.argv) == 9):
-		my_docking = Docking()
-		if(sys.argv[1]=="Inf"):
-			my_docking.x_max = 5
-		else:
-			my_docking.x_max = float(sys.argv[1])
-		my_docking.x_min = float(sys.argv[2])
-		if(sys.argv[3]=="Inf"):
-			my_docking.y_max = 5
-		else:
-			my_docking.y_max = float(sys.argv[3])
-		my_docking.y_min = float(sys.argv[4])
-		my_docking.tolerance = float(sys.argv[5])
-		my_docking.angular_min = float(sys.argv[6])
-		print(my_docking.angular_min)
-		while(not rospy.is_shutdown()):
-			# start docking when service is called
-			# make sure marker is detected
-			if(my_docking.marker_pose_calibrated.pose.position.x and rospy.get_param('docking')):
-				my_docking.calculate_diff()
-				my_docking.locate()
-			my_docking.rate.sleep()
-
-	else:
-		print("Argument(s) missing.")
+	my_docking = Docking()
+	while(not rospy.is_shutdown()):
+		# start docking when service is called
+		# make sure marker is detected
+		if(my_docking.marker_pose_calibrated.pose.position.x and rospy.get_param('docking')):
+			# filtering the pose
+			[position_vec, orient_vec] = my_docking.vec_from_pose(my_docking.marker_pose_calibrated.pose)
+			euler_vec = euler_from_quaternion(orient_vec)
+			my_docking.position_queue.append(position_vec)
+			my_docking.orientation_queue.append(orient_vec)
+			filtered_position_vec = my_docking.avr(my_docking.position_queue)
+			filtered_orient_vec = my_docking.avr(my_docking.orientation_queue)
+			filtered_pose = my_docking.pose_from_vec(filtered_position_vec, filtered_orient_vec)
+			my_docking.marker_pose_calibrated = filtered_pose
+			my_docking.ar_pose_filtered_pub.publish(filtered_pose)
+			if(len(my_docking.position_queue) == 15):
+				my_docking.position_queue.pop(0)
+				my_docking.orientation_queue.pop(0)
+			# performing the docking procedure			
+			my_docking.calculate_diff()
+			my_docking.locate()
+		# if not docking, just print available markers(stations)
+		elif(my_docking.marker_list and not my_docking.marker_list == my_docking.marker_list_printed):
+			print("Marker(s) detected are:")
+			print(my_docking.marker_list)
+			my_docking.marker_list_printed = my_docking.marker_list
+		my_docking.rate.sleep()
