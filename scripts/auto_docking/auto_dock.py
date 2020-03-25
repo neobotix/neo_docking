@@ -28,27 +28,154 @@ class Docking:
 		self.angular_min = rospy.get_param('/'+self.node_name+'/velocity/angular/min')
 		self.start = 0
 		self.base_pose = PoseStamped()
-		self.marker_pose = PoseStamped()
-		self.marker_pose_calibrated = PoseStamped()
 		self.base_marker_diff = PoseStamped()
-		self.marker_list = []
-		self.marker_list_printed = []
-		self.STATION_NR = None
 		# initializing node, subscribers, publishers and servcer
 		rospy.init_node(self.node_name)
 		self.rate = rospy.Rate(15)
 		self.tf_buffer = tf2_ros.Buffer(rospy.Duration(1200.0))
 		listener = tf2_ros.TransformListener(self.tf_buffer)
 		odom_sub = rospy.Subscriber('odom', Odometry, self.odom_callback)
-		pose_sub = rospy.Subscriber('ar_pose_marker', AlvarMarkers, self.marker_pose_calibration)
-		server = rospy.Service(self.node_name, auto_docking, self.service_callback)
-		rospy.loginfo("auto_docking service is ready.")
 		self.vel_pub = rospy.Publisher('cmd_vel', Twist, queue_size=1)
-		#self.ar_pose_corrected_pub = rospy.Publisher('ar_pose_corrected', PoseStamped, queue_size=1)
-		self.ar_pose_filtered_pub = rospy.Publisher('ar_pose_filtered', PoseStamped, queue_size=1)
 		
 		# in test
 		self.LAST_STEP = False
+		
+
+	# functions for autonomous docking
+	# callback function of odom_sub
+	def odom_callback(self, odom):
+		# restore measured odom info from nav_msgs/Odometry into geometry_msgs/PoseStamped format
+		self.base_pose.header = odom.header
+		self.base_pose.pose = odom.pose.pose
+
+	# calculating displacement between marker and robot			
+	def calculate_diff(self, filtered_pose):
+		# remove the error due to displacement between map-frame and odom-frame
+		map_to_base = self.tf_buffer.lookup_transform('base_link', 'map', rospy.Time(0), rospy.Duration(1.0))
+		odom_map_diff = self.tf_buffer.lookup_transform('map', 'odom', rospy.Time(0), rospy.Duration(1.0))
+		# compute difference between marker and base_link
+		self.base_pose = tf2_geometry_msgs.do_transform_pose(self.base_pose, odom_map_diff)
+		self.base_pose.header.frame_id = 'map'
+		self.base_marker_diff.header.stamp = rospy.Time.now()
+		self.base_marker_diff.header.frame_id = 'map'
+		self.base_marker_diff.pose.position.x = filtered_pose.pose.position.x - self.base_pose.pose.position.x
+		self.base_marker_diff.pose.position.y = filtered_pose.pose.position.y - self.base_pose.pose.position.y
+		map_to_base.transform.translation = Vector3()
+		self.base_marker_diff = tf2_geometry_msgs.do_transform_pose(self.base_marker_diff, map_to_base)
+		filtered_pose_euler = euler_from_quaternion([filtered_pose.pose.orientation.x, filtered_pose.pose.orientation.y, filtered_pose.pose.orientation.z, filtered_pose.pose.orientation.w])
+		base_pose_euler = euler_from_quaternion([self.base_pose.pose.orientation.x, self.base_pose.pose.orientation.y, self.base_pose.pose.orientation.z, self.base_pose.pose.orientation.w])
+		# calculate the difference
+		self.diff_x = self.base_marker_diff.pose.position.x
+		# calibration of camera mounting		
+		self.diff_y = self.base_marker_diff.pose.position.y
+		self.diff_theta = filtered_pose_euler[2]-base_pose_euler[2]
+		if(abs(self.diff_theta) > np.pi):
+			self.diff_theta = self.diff_theta + np.sign(-self.diff_theta)*(2*np.pi)
+		print("Difference: ["+str(self.diff_x)+", "+str(self.diff_y)+", "+str(np.degrees(self.diff_theta))+"]")
+		
+	# execute the first phase of docking process
+	def locate(self):
+		self.vel = Twist()
+		# calculate the velocity needed for docking
+		time_waited = time.time() - self.start
+		# drive robot to where we start the visual servo process
+		# visual servo would remove the error on x & y
+		# in test
+		self.vel.linear.x = 0
+		self.vel.linear.y = 0
+		# threshold in test, try to counter overshooting in first process
+		if(abs(np.degrees(self.diff_theta)) < 2 or time_waited > 20):
+			self.vel.angular.z = 0
+			if(abs(self.diff_y) < 0.05 or time_waited > 10):
+				self.vel.linear.y = 0
+				if(abs(self.diff_x) < 0.722 or time_waited > 10):
+					self.vel.linear.x = 0
+				else:
+					self.vel.linear.x = min(max(self.kp_x * self.diff_x, 2*self.x_min), self.x_max)
+			else:
+				self.vel.linear.y = self.kp_y * self.diff_y
+				# defining the minimal cmd_vel on y-direction
+				if abs(self.vel.linear.y) < 1.5 * self.y_min:
+					self.vel.linear.y = 1.5 * self.y_min * np.sign(self.vel.linear.y)
+				elif abs(self.vel.linear.y) > self.y_max:
+					self.vel.linear.y = self.y_max * np.sign(self.vel.linear.y)
+		# filter out shakes from AR tracking package
+		elif(abs(np.degrees(self.diff_theta)) > 65):
+			self.vel.angular.z = 0.005 * np.sign(self.diff_theta)
+		else:
+			self.vel.angular.z = self.kp_theta * self.diff_theta
+			if(abs(self.vel.angular.z) < self.angular_min):
+				self.vel.angular.z = self.angular_min * np.sign(self.vel.angular.z)
+		state = self.vel.linear.x + self.vel.linear.y + self.vel.angular.z
+		# check if the 1st phase of docking is done
+		if(state == 0): 
+			#print("start visual servo.")
+			self.dock()
+		else:
+			self.vel_pub.publish(self.vel)
+
+	# second phase of docking, serves for accuracy
+	def dock(self):
+		kp_x = rospy.get_param('/'+self.node_name+'/kp/x_fine')
+		kp_y = rospy.get_param('/'+self.node_name+'/kp/y_fine')
+		kp_theta = rospy.get_param('/'+self.node_name+'/kp/theta_fine')
+		vel = Twist()
+		# in case the 2nd docking process failed
+		if(abs(np.degrees(self.diff_theta)) > 5 or self.diff_y > 0.02):
+			self.start = time.time()
+		# won't adjust vel.linear.x and vel.linear.y at the same time,
+		# to avoid causing hardware damage
+		
+		# use a larger threshold when in last step, because the noise of visual feedback always makes vel.linear.y jumps between some value and 0
+		# which destroyed the priority of y
+		if(self.LAST_STEP):
+			tolerance = self.tolerance
+		else:
+			tolerance = 0.5 * self.tolerance
+		if(abs(self.diff_y) > tolerance):
+			vel.linear.y = kp_y * self.diff_y
+			if abs(vel.linear.y) < self.y_min:
+				vel.linear.y = self.y_min * np.sign(vel.linear.y)
+			elif abs(vel.linear.y > 0.8 * self.y_max):
+				vel.linear.y = 0.8 * self.y_max * np.sign(vel.linear.y)
+			vel.linear.x = 0
+		else:
+			self.LAST_STEP = True
+			vel.linear.y = 0
+			# correspondent: montage x = +25cm
+			if(self.diff_x - 0.65 > 0.01):
+				vel.linear.x = min(max(kp_x * (self.diff_x - 0.30), self.x_min), 2*self.x_min)
+			else:
+				vel.linear.x = 0
+				vel.linear.y = 0
+				if(abs(np.degrees(self.diff_theta)) < 0.05):
+					vel.angular.z = 0
+				else:
+					vel.angular.z = 0.2 * self.kp_theta * self.diff_theta
+					if(abs(vel.angular.z) < self.angular_min):
+						vel.angular.z = self.angular_min * np.sign(vel.angular.z)
+		self.vel_pub.publish(vel)
+		# check if the process is done
+		if(not (vel.linear.x + vel.linear.y + vel.angular.z)):
+			rospy.set_param('docking', False)
+			print("Connection established.")
+
+class Filter():
+# functions for pose transformation
+	# initializations
+	def __init__(self):
+		self.node_name = 'auto_docking'
+		self.marker_pose = PoseStamped()
+		self.marker_pose_calibrated = PoseStamped()
+		self.marker_list = []
+		self.marker_list_printed = []
+		self.STATION_NR = None
+		self.tf_buffer = tf2_ros.Buffer(rospy.Duration(1200.0))
+		listener = tf2_ros.TransformListener(self.tf_buffer)
+		self.pose_sub = rospy.Subscriber('ar_pose_marker', AlvarMarkers, self.marker_pose_calibration)
+		self.filtered_pose_pub = rospy.Publisher('ar_pose_filtered', PoseStamped, queue_size=1)
+		server = rospy.Service(self.node_name, auto_docking, self.service_callback)
+		rospy.loginfo("auto_docking service is ready.")
 		# load markers into a list, as reference of detection
 		i = 0
 		self.defined_markers = []
@@ -66,7 +193,6 @@ class Docking:
 					print("No marker is defined.")
 				break
 
-	# functions for pose transformation
 	# establish the rotation matrix from euler angle
 	def mat_from_euler(self, euler):
 		alpha = euler[0]
@@ -182,151 +308,32 @@ class Docking:
 		print("Service request received.")
 		return "Service requested."	
 
-	# functions for autonomous docking
-	# callback function of odom_sub
-	def odom_callback(self, odom):
-		# restore measured odom info from nav_msgs/Odometry into geometry_msgs/PoseStamped format
-		self.base_pose.header = odom.header
-		self.base_pose.pose = odom.pose.pose
-
-	# calculating displacement between marker and robot			
-	def calculate_diff(self):
-		# remove the error due to displacement between map-frame and odom-frame
-		map_to_base = self.tf_buffer.lookup_transform('base_link', 'map', rospy.Time(0), rospy.Duration(1.0))
-		odom_map_diff = self.tf_buffer.lookup_transform('map', 'odom', rospy.Time(0), rospy.Duration(1.0))
-		# compute difference between marker and base_link
-		self.base_pose = tf2_geometry_msgs.do_transform_pose(self.base_pose, odom_map_diff)
-		self.base_pose.header.frame_id = 'map'
-		self.base_marker_diff.header.stamp = rospy.Time.now()
-		self.base_marker_diff.header.frame_id = 'map'
-		self.base_marker_diff.pose.position.x = self.marker_pose_calibrated.pose.position.x - self.base_pose.pose.position.x
-		self.base_marker_diff.pose.position.y = self.marker_pose_calibrated.pose.position.y - self.base_pose.pose.position.y
-		map_to_base.transform.translation = Vector3()
-		self.base_marker_diff = tf2_geometry_msgs.do_transform_pose(self.base_marker_diff, map_to_base)
-		marker_pose_calibrated_euler = euler_from_quaternion([self.marker_pose_calibrated.pose.orientation.x, self.marker_pose_calibrated.pose.orientation.y, self.marker_pose_calibrated.pose.orientation.z, self.marker_pose_calibrated.pose.orientation.w])
-		base_pose_euler = euler_from_quaternion([self.base_pose.pose.orientation.x, self.base_pose.pose.orientation.y, self.base_pose.pose.orientation.z, self.base_pose.pose.orientation.w])
-		# calculate the difference
-		self.diff_x = self.base_marker_diff.pose.position.x
-		# calibration of camera mounting		
-		self.diff_y = self.base_marker_diff.pose.position.y
-		self.diff_theta = marker_pose_calibrated_euler[2]-base_pose_euler[2]
-		if(abs(self.diff_theta) > np.pi):
-			self.diff_theta = self.diff_theta + np.sign(-self.diff_theta)*(2*np.pi)
-		print("Difference: ["+str(self.diff_x)+", "+str(self.diff_y)+", "+str(np.degrees(self.diff_theta))+"]")
-		
-	# execute the first phase of docking process
-	def locate(self):
-		self.vel = Twist()
-		# calculate the velocity needed for docking
-		time_waited = time.time() - self.start
-		# drive robot to where we start the visual servo process
-		# visual servo would remove the error on x & y
-		# in test
-		self.vel.linear.x = 0
-		self.vel.linear.y = 0
-		# threshold in test, try to counter overshooting in first process
-		if(abs(np.degrees(self.diff_theta)) < 2 or time_waited > 20):
-			self.vel.angular.z = 0
-			if(abs(self.diff_y) < 0.05 or time_waited > 10):
-				self.vel.linear.y = 0
-				if(abs(self.diff_x) < 0.722 or time_waited > 10):
-					self.vel.linear.x = 0
-				else:
-					self.vel.linear.x = min(max(self.kp_x * self.diff_x, 2*self.x_min), self.x_max)
-			else:
-				self.vel.linear.y = self.kp_y * self.diff_y
-				# defining the minimal cmd_vel on y-direction
-				if abs(self.vel.linear.y) < 1.5 * self.y_min:
-					self.vel.linear.y = 1.5 * self.y_min * np.sign(self.vel.linear.y)
-				elif abs(self.vel.linear.y) > self.y_max:
-					self.vel.linear.y = self.y_max * np.sign(self.vel.linear.y)
-		# filter out shakes from AR tracking package
-		elif(abs(np.degrees(self.diff_theta)) > 65):
-			self.vel.angular.z = 0.005 * np.sign(self.diff_theta)
-		else:
-			self.vel.angular.z = self.kp_theta * self.diff_theta
-			if(abs(self.vel.angular.z) < self.angular_min):
-				self.vel.angular.z = self.angular_min * np.sign(self.vel.angular.z)
-		state = self.vel.linear.x + self.vel.linear.y + self.vel.angular.z
-		# check if the 1st phase of docking is done
-		if(state == 0): 
-			#print("start visual servo.")
-			self.dock()
-		else:
-			self.vel_pub.publish(self.vel)
-
-	# second phase of docking, serves for accuracy
-	def dock(self):
-		kp_x = rospy.get_param('/'+self.node_name+'/kp/x_fine')
-		kp_y = rospy.get_param('/'+self.node_name+'/kp/y_fine')
-		kp_theta = rospy.get_param('/'+self.node_name+'/kp/theta_fine')
-		vel = Twist()
-		# in case the 2nd docking process failed
-		if(abs(np.degrees(self.diff_theta)) > 5 or self.diff_y > 0.02):
-			self.start = time.time()
-		# won't adjust vel.linear.x and vel.linear.y at the same time,
-		# to avoid causing hardware damage
-		
-		# use a larger threshold when in last step, because the noise of visual feedback always makes vel.linear.y jumps between some value and 0
-		# which destroyed the priority of y
-		if(self.LAST_STEP):
-			tolerance = self.tolerance
-		else:
-			tolerance = 0.5 * self.tolerance
-		if(abs(self.diff_y) > tolerance):
-			vel.linear.y = kp_y * self.diff_y
-			if abs(vel.linear.y) < self.y_min:
-				vel.linear.y = self.y_min * np.sign(vel.linear.y)
-			elif abs(vel.linear.y > 0.8 * self.y_max):
-				vel.linear.y = 0.8 * self.y_max * np.sign(vel.linear.y)
-			vel.linear.x = 0
-		else:
-			self.LAST_STEP = True
-			vel.linear.y = 0
-			# correspondent: montage x = +25cm
-			if(self.diff_x - 0.572 > 0.01):
-				vel.linear.x = min(max(kp_x * (self.diff_x - 0.30), self.x_min), 2*self.x_min)
-			else:
-				vel.linear.x = 0
-				vel.linear.y = 0
-				if(abs(np.degrees(self.diff_theta)) < 0.05):
-					vel.angular.z = 0
-				else:
-					vel.angular.z = 0.2 * self.kp_theta * self.diff_theta
-					if(abs(vel.angular.z) < self.angular_min):
-						vel.angular.z = self.angular_min * np.sign(vel.angular.z)
-		self.vel_pub.publish(vel)
-		# check if the process is done
-		if(not (vel.linear.x + vel.linear.y + vel.angular.z)):
-			rospy.set_param('docking', False)
-			self.marker_pose_calibrated = PoseStamped()
-			print("Connection established.")
-
 if __name__ == '__main__':
 	my_docking = Docking()
+	my_filter = Filter()
 	while(not rospy.is_shutdown()):
 		# start docking when service is called
 		# make sure marker is detected
-		if(my_docking.marker_pose_calibrated.pose.position.x and rospy.get_param('docking')):
+		if(my_filter.marker_pose_calibrated.pose.position.x and rospy.get_param('docking')):
 			# filtering the pose
-			[position_vec, orient_vec] = my_docking.vec_from_pose(my_docking.marker_pose_calibrated.pose)
+			[position_vec, orient_vec] = my_filter.vec_from_pose(my_filter.marker_pose_calibrated.pose)
 			euler_vec = euler_from_quaternion(orient_vec)
-			my_docking.position_queue.append(position_vec)
-			my_docking.orientation_queue.append(orient_vec)
-			filtered_position_vec = my_docking.avr(my_docking.position_queue)
-			filtered_orient_vec = my_docking.avr(my_docking.orientation_queue)
-			filtered_pose = my_docking.pose_from_vec(filtered_position_vec, filtered_orient_vec)
-			my_docking.marker_pose_calibrated = filtered_pose
-			my_docking.ar_pose_filtered_pub.publish(filtered_pose)
-			if(len(my_docking.position_queue) == 15):
-				my_docking.position_queue.pop(0)
-				my_docking.orientation_queue.pop(0)
+			my_filter.position_queue.append(position_vec)
+			my_filter.orientation_queue.append(orient_vec)
+			filtered_position_vec = my_filter.avr(my_filter.position_queue)
+			filtered_orient_vec = my_filter.avr(my_filter.orientation_queue)
+			filtered_pose = my_filter.pose_from_vec(filtered_position_vec, filtered_orient_vec)
+			my_filter.marker_pose_calibrated = filtered_pose
+			my_filter.filtered_pose_pub.publish(filtered_pose)
+			if(len(my_filter.position_queue) == 15):
+				my_filter.position_queue.pop(0)
+				my_filter.orientation_queue.pop(0)
 			# performing the docking procedure			
-			my_docking.calculate_diff()
+			my_docking.calculate_diff(filtered_pose)
 			my_docking.locate()
 		# if not docking, just print available markers(stations)
-		elif(my_docking.marker_list and not my_docking.marker_list == my_docking.marker_list_printed):
+		elif(my_filter.marker_list and not my_filter.marker_list == my_filter.marker_list_printed):
 			print("Marker(s) detected are:")
-			print(my_docking.marker_list)
-			my_docking.marker_list_printed = my_docking.marker_list
+			print(my_filter.marker_list)
+			my_filter.marker_list_printed = my_filter.marker_list
 		my_docking.rate.sleep()
