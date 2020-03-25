@@ -2,6 +2,7 @@
 <launch>
 	<!-- Load Parameters -->
 	<rosparam file="$(find neo_docking)/configs/auto_docking/auto_docking_sim.yaml" />
+	
 	<!-- Launch Node -->
 	<node name="auto_docking" pkg="neo_docking" type="auto_dock.py" output="screen" />
 </launch>
