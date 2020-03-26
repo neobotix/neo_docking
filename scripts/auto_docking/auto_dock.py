@@ -332,7 +332,7 @@ if __name__ == '__main__':
 			my_docking.calculate_diff(filtered_pose)
 			my_docking.locate()
 		# if not docking, just print available markers(stations)
-		elif(my_filter.marker_list and not my_filter.marker_list == my_filter.marker_list_printed):
+		elif(my_filter.marker_list and not sorted(my_filter.marker_list) == sorted(my_filter.marker_list_printed)):
 			print("Marker(s) detected are:")
 			print(my_filter.marker_list)
 			my_filter.marker_list_printed = my_filter.marker_list
