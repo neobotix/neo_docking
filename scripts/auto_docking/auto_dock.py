@@ -188,9 +188,9 @@ class Filter():
 			except:
 				l = len(self.defined_markers)
 				if(l):
-					print(str(l)+" markers are loaded.")
+					rospy.loginfo(str(l)+" marker(s) loaded.")
 				else:
-					print("No marker is defined.")
+					rospy.loginfo("No marker is defined.")
 				break
 
 	# establish the rotation matrix from euler angle
@@ -334,6 +334,6 @@ if __name__ == '__main__':
 		# if not docking, just print available markers(stations)
 		elif(my_filter.marker_list and not sorted(my_filter.marker_list) == sorted(my_filter.marker_list_printed)):
 			print("Marker(s) detected are:")
-			print(my_filter.marker_list)
+			print(sorted(my_filter.marker_list))
 			my_filter.marker_list_printed = my_filter.marker_list
 		my_docking.rate.sleep()
