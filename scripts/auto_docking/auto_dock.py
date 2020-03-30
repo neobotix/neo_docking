@@ -301,12 +301,23 @@ class Filter():
 
 	# the callback function of service auto_docking
 	def service_callback(self, auto_docking):
-		self.STATION_NR = auto_docking.station_nr
-		self.position_queue = []
-		self.orientation_queue = []
-		rospy.set_param('docking', True)
-		print("Service request received.")
-		return "Service requested."	
+		try:
+			docking_state = rospy.get_param('docking')
+		except:
+			rospy.set_param('docking', False)
+			docking_state = False
+		if(not docking_state):
+			if(not auto_docking.station_nr in self.marker_list):
+				return "Marker "+str(auto_docking.station_nr)+" not detected, please make sure robot is in a feasible area."
+			else:
+				self.STATION_NR = auto_docking.station_nr
+				self.position_queue = []
+				self.orientation_queue = []
+				rospy.set_param('docking', True)
+				print("Service request received.")
+				return "Service requested."
+		else:
+			return "Robot is occupied now, request rejected."
 
 if __name__ == '__main__':
 	my_docking = Docking()
@@ -331,6 +342,7 @@ if __name__ == '__main__':
 			# performing the docking procedure			
 			my_docking.calculate_diff(filtered_pose)
 			my_docking.locate()
+			my_filter.marker_list_printed = []
 		# if not docking, just print available markers(stations)
 		elif(my_filter.marker_list and not sorted(my_filter.marker_list) == sorted(my_filter.marker_list_printed)):
 			print("Marker(s) detected are:")
