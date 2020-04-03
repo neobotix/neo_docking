@@ -336,7 +336,7 @@ if __name__ == '__main__':
 			filtered_pose = my_filter.pose_from_vec(filtered_position_vec, filtered_orient_vec)
 			my_filter.marker_pose_calibrated = filtered_pose
 			my_filter.filtered_pose_pub.publish(filtered_pose)
-			if(len(my_filter.position_queue) == 15):
+			if(len(my_filter.position_queue) == 10):
 				my_filter.position_queue.pop(0)
 				my_filter.orientation_queue.pop(0)
 			# performing the docking procedure			
