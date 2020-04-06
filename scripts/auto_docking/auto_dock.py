@@ -39,6 +39,7 @@ class Docking:
 		
 		# in test
 		self.LAST_STEP = False
+		self.start_docking = False
 		
 
 	# functions for autonomous docking
@@ -81,6 +82,7 @@ class Docking:
 		# drive robot to where we start the visual servo process
 		# visual servo would remove the error on x & y
 		# in test
+		'''
 		self.vel.linear.x = 0
 		self.vel.linear.y = 0
 		# threshold in test, try to counter overshooting in first process
@@ -106,13 +108,37 @@ class Docking:
 			self.vel.angular.z = self.kp_theta * self.diff_theta
 			if(abs(self.vel.angular.z) < self.angular_min):
 				self.vel.angular.z = self.angular_min * np.sign(self.vel.angular.z)
-		state = self.vel.linear.x + self.vel.linear.y + self.vel.angular.z
-		# check if the 1st phase of docking is done
-		if(state == 0): 
-			#print("start visual servo.")
-			self.dock()
+		'''
+		if(abs(self.diff_x) < 0.75 or time_waited > 10):
+			self.vel.linear.x = 0
 		else:
-			self.vel_pub.publish(self.vel)
+			self.vel.linear.x = min(max(self.kp_x * self.diff_x, 2*self.x_min), self.x_max)
+		if(abs(self.diff_y) < 0.005 or time_waited > 10):
+			self.vel.linear.y = 0
+		else:
+			self.vel.linear.y = self.kp_y * self.diff_y
+			# defining the minimal cmd_vel on y-direction
+			if abs(self.vel.linear.y) < 1.5 * self.y_min:
+				self.vel.linear.y = 1.5 * self.y_min * np.sign(self.vel.linear.y)
+			elif abs(self.vel.linear.y) > self.y_max:
+				self.vel.linear.y = self.y_max * np.sign(self.vel.linear.y)
+		if(abs(np.degrees(self.diff_theta)) < 0.5 or time_waited > 20):
+			self.vel.angular.z = 0
+		# filter out shakes from AR tracking package
+		elif(abs(np.degrees(self.diff_theta)) > 65):
+			self.vel.angular.z = 0.005 * np.sign(self.diff_theta)
+		else:
+			self.vel.angular.z = self.kp_theta * self.diff_theta
+			if(abs(self.vel.angular.z) < self.angular_min):
+				self.vel.angular.z = self.angular_min * np.sign(self.vel.angular.z)
+		state = self.vel.linear.x + self.vel.linear.y + self.vel.angular.z
+		self.vel_pub.publish(self.vel)
+		# check if the 1st phase of docking is done
+		if(not state): 
+			if(time.time()-self.start_docking > 3):
+				self.dock()
+		else:
+			self.start_docking = time.time()
 
 	# second phase of docking, serves for accuracy
 	def dock(self):
@@ -132,28 +158,11 @@ class Docking:
 			tolerance = self.tolerance
 		else:
 			tolerance = 0.5 * self.tolerance
-		if(abs(self.diff_y) > tolerance):
-			vel.linear.y = kp_y * self.diff_y
-			if abs(vel.linear.y) < self.y_min:
-				vel.linear.y = self.y_min * np.sign(vel.linear.y)
-			elif abs(vel.linear.y > 0.8 * self.y_max):
-				vel.linear.y = 0.8 * self.y_max * np.sign(vel.linear.y)
-			vel.linear.x = 0
+		# correspondent: montage x = +25cm
+		if(self.diff_x - 0.65 > 0.01):
+			vel.linear.x = min(max(kp_x * (self.diff_x - 0.30), self.x_min), 2*self.x_min)
 		else:
-			self.LAST_STEP = True
-			vel.linear.y = 0
-			# correspondent: montage x = +25cm
-			if(self.diff_x - 0.65 > 0.01):
-				vel.linear.x = min(max(kp_x * (self.diff_x - 0.30), self.x_min), 2*self.x_min)
-			else:
-				vel.linear.x = 0
-				vel.linear.y = 0
-				if(abs(np.degrees(self.diff_theta)) < 0.05):
-					vel.angular.z = 0
-				else:
-					vel.angular.z = 0.2 * self.kp_theta * self.diff_theta
-					if(abs(vel.angular.z) < self.angular_min):
-						vel.angular.z = self.angular_min * np.sign(vel.angular.z)
+			vel.linear.x = 0
 		self.vel_pub.publish(vel)
 		# check if the process is done
 		if(not (vel.linear.x + vel.linear.y + vel.angular.z)):
