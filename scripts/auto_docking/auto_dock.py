@@ -122,7 +122,7 @@ class Docking:
 				self.vel.linear.y = 1.5 * self.y_min * np.sign(self.vel.linear.y)
 			elif abs(self.vel.linear.y) > self.y_max:
 				self.vel.linear.y = self.y_max * np.sign(self.vel.linear.y)
-		if(abs(np.degrees(self.diff_theta)) < 0.5 or time_waited > 20):
+		if(abs(np.degrees(self.diff_theta)) < 0.15 or time_waited > 20):
 			self.vel.angular.z = 0
 		# filter out shakes from AR tracking package
 		elif(abs(np.degrees(self.diff_theta)) > 65):
@@ -168,6 +168,10 @@ class Docking:
 		if(not (vel.linear.x + vel.linear.y + vel.angular.z)):
 			rospy.set_param('docking', False)
 			print("Connection established.")
+			# test
+			rospy.set_param('diff_x', self.diff_x)
+			rospy.set_param('diff_y', self.diff_y)
+			rospy.set_param('diff_theta', self.diff_theta)
 
 class Filter():
 # functions for pose transformation
@@ -345,6 +349,7 @@ if __name__ == '__main__':
 			filtered_pose = my_filter.pose_from_vec(filtered_position_vec, filtered_orient_vec)
 			my_filter.marker_pose_calibrated = filtered_pose
 			my_filter.filtered_pose_pub.publish(filtered_pose)
+			# set the size of sliding window here
 			if(len(my_filter.position_queue) == 10):
 				my_filter.position_queue.pop(0)
 				my_filter.orientation_queue.pop(0)
