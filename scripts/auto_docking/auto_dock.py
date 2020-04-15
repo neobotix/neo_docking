@@ -40,7 +40,6 @@ class Docking:
 		# in test
 		self.LAST_STEP = False
 		self.start_docking = False
-		
 
 	# functions for autonomous docking
 	# callback function of odom_sub
@@ -50,7 +49,7 @@ class Docking:
 		self.base_pose.pose = odom.pose.pose
 
 	# calculating displacement between marker and robot			
-	def calculate_diff(self, filtered_pose):
+	def calculate_diff(self, filtered_pose, offset):
 		# remove the error due to displacement between map-frame and odom-frame
 		map_to_base = self.tf_buffer.lookup_transform('base_link', 'map', rospy.Time(0), rospy.Duration(1.0))
 		odom_map_diff = self.tf_buffer.lookup_transform('map', 'odom', rospy.Time(0), rospy.Duration(1.0))
@@ -72,8 +71,12 @@ class Docking:
 		self.diff_theta = filtered_pose_euler[2]-base_pose_euler[2]
 		if(abs(self.diff_theta) > np.pi):
 			self.diff_theta = self.diff_theta + np.sign(-self.diff_theta)*(2*np.pi)
+		# add offsets to (x, y, theta)
+		self.diff_x += offset[0]		# offset[0] < 0 if docking pin is closer to robot than the ARTag
+		self.diff_y += offset[1]		# offset[1] < 0 if docking pin is to the right of ARTag, w.r.t. camera_link
+		self.diff_theta += offset[2]	# offset[2] < 0 if docking pin is rotated to clockwise direction
 		print("Difference: ["+str(self.diff_x)+", "+str(self.diff_y)+", "+str(np.degrees(self.diff_theta))+"]")
-		
+
 	# execute the first phase of docking process
 	def locate(self):
 		self.vel = Twist()
@@ -109,11 +112,11 @@ class Docking:
 			if(abs(self.vel.angular.z) < self.angular_min):
 				self.vel.angular.z = self.angular_min * np.sign(self.vel.angular.z)
 		'''
-		if(abs(self.diff_x) < 0.75 or time_waited > 10):
+		if(abs(self.diff_x) < 0.1 or time_waited > 20):
 			self.vel.linear.x = 0
 		else:
 			self.vel.linear.x = min(max(self.kp_x * self.diff_x, 2*self.x_min), self.x_max)
-		if(abs(self.diff_y) < 0.005 or time_waited > 10):
+		if(abs(self.diff_y) < 0.005 or time_waited > 20):
 			self.vel.linear.y = 0
 		else:
 			self.vel.linear.y = self.kp_y * self.diff_y
@@ -136,9 +139,10 @@ class Docking:
 		# check if the 1st phase of docking is done
 		if(not state): 
 			if(time.time()-self.start_docking > 3):
-				self.dock()
+				return True
 		else:
 			self.start_docking = time.time()
+			return False
 
 	# second phase of docking, serves for accuracy
 	def dock(self):
@@ -159,7 +163,7 @@ class Docking:
 		else:
 			tolerance = 0.5 * self.tolerance
 		# correspondent: montage x = +25cm
-		if(self.diff_x - 0.65 > 0.01):
+		if(self.diff_x > 0.01):
 			vel.linear.x = min(max(kp_x * (self.diff_x - 0.30), self.x_min), 2*self.x_min)
 		else:
 			vel.linear.x = 0
@@ -324,6 +328,7 @@ class Filter():
 				return "Marker "+str(auto_docking.station_nr)+" not detected, please make sure robot is in a feasible area."
 			else:
 				self.STATION_NR = auto_docking.station_nr
+				self.offset = [rospy.get_param('/'+self.node_name+'/model_'+str(self.STATION_NR)[0]+'/offset/x'), rospy.get_param('/'+self.node_name+'/model_'+str(self.STATION_NR)[0]+'/offset/y'), rospy.get_param('/'+self.node_name+'/model_'+str(self.STATION_NR)[0]+'/offset/theta')]
 				self.position_queue = []
 				self.orientation_queue = []
 				rospy.set_param('docking', True)
@@ -335,6 +340,9 @@ class Filter():
 if __name__ == '__main__':
 	my_docking = Docking()
 	my_filter = Filter()
+	# state = True: call 2nd periode of docking process
+	state = False
+	window_size = 15
 	while(not rospy.is_shutdown()):
 		# start docking when service is called
 		# make sure marker is detected
@@ -349,17 +357,37 @@ if __name__ == '__main__':
 			filtered_pose = my_filter.pose_from_vec(filtered_position_vec, filtered_orient_vec)
 			my_filter.marker_pose_calibrated = filtered_pose
 			my_filter.filtered_pose_pub.publish(filtered_pose)
-			# set the size of sliding window here
-			if(len(my_filter.position_queue) == 10):
+			# performing the docking procedure			
+			my_docking.calculate_diff(filtered_pose, my_filter.offset)
+			# check if the 1st periode is finished(state == True)
+			if(not state):
+				if(not my_docking.start):
+					my_docking.start = time.time()
+				state = my_docking.locate()
+			else:
+				window_size = 100
+				# in 2nd periode of docking, the robot won't move until it got a more stable input
+				if(len(my_filter.position_queue) == window_size):
+					sub_state = my_docking.locate()
+					if(sub_state):
+						my_docking.dock()
+			# pop the oldest frame in window, in order to update the result of filtering
+			if(len(my_filter.position_queue) == window_size):
 				my_filter.position_queue.pop(0)
 				my_filter.orientation_queue.pop(0)
-			# performing the docking procedure			
-			my_docking.calculate_diff(filtered_pose)
-			my_docking.locate()
+			# reset printing
 			my_filter.marker_list_printed = []
 		# if not docking, just print available markers(stations)
 		elif(my_filter.marker_list and not sorted(my_filter.marker_list) == sorted(my_filter.marker_list_printed)):
 			print("Marker(s) detected are:")
 			print(sorted(my_filter.marker_list))
 			my_filter.marker_list_printed = my_filter.marker_list
+			my_filter.position_queue = []
+			my_filter.orientation_queue = []
+			state = False
+			window_size = 15
+			my_docking.start = 0
+		elif(not my_filter.marker_list and my_filter.marker_list_printed):
+			print("Lost track of marker(s), please move robot to a feasible area.")
+			my_filter.marker_list_printed = []
 		my_docking.rate.sleep()
