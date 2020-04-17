@@ -36,6 +36,7 @@ class Filter():
 		# data for sliding window
 		self.base_to_odom = np.array([])
 		self.translation = []			# of base_link in odom
+		self.quaternion = []
 		self.trans_marker_in_odom = []
 		self.rot_marker_in_odom = []
 		self.translation_window = []
@@ -86,16 +87,19 @@ class Filter():
 		return mat
 
 	# solve quaternion from given matrix, knowing that 1st and 2nd angles are 0
-	def quaternion_from_mat(self, mat):
+	def quaternion_from_mat(self, mat, reference):
 		# alpha = beta = 0
 		# gamma = arctan(m[1][0]/m[0][0])
-		euler_vec = self.euler_from_mat(mat)
+		euler_vec = self.euler_from_mat(mat, reference)
 		q = quaternion_from_euler(euler_vec[0], euler_vec[1], euler_vec[2])
 		return q
 
 	# solve euler angle from given matrix, knowing that 1st and 2nd angles are 0
-	def euler_from_mat(self, mat):
+	def euler_from_mat(self, mat, reference):
 		gamma = np.arctan(mat[1][0]/mat[0][0])
+		if abs(gamma - reference) > (np.pi/2):
+			gamma = -np.sign(gamma) * (np.pi - abs(gamma))
+
 		return [0, 0, gamma]
 
 	# callback of ar_track_alvar
@@ -154,8 +158,8 @@ class Filter():
 	def odom_callback(self, odom):
 		if(odom.header.stamp == self.marker_pose.header.stamp):
 			self.translation = [odom.pose.pose.position.x, odom.pose.pose.position.y, odom.pose.pose.position.z]
-			quaternion = [odom.pose.pose.orientation.x, odom.pose.pose.orientation.y, odom.pose.pose.orientation.z, odom.pose.pose.orientation.w]
-			euler = euler_from_quaternion(quaternion)
+			self.quaternion = [odom.pose.pose.orientation.x, odom.pose.pose.orientation.y, odom.pose.pose.orientation.z, odom.pose.pose.orientation.w]
+			euler = euler_from_quaternion(self.quaternion)
 			mat = self.mat_from_euler(euler)
 			self.base_to_odom = np.array(mat)
 			trans_marker_in_base = [self.marker_pose.pose.position.x + 0.228, self.marker_pose.pose.position.y - 0.015, self.marker_pose.pose.position.z + 0.461]
@@ -191,7 +195,7 @@ class Filter():
 		odom_to_base = self.base_to_odom.transpose()
 		trans_in_base = np.dot(odom_to_base, np.subtract(trans_in_odom, self.translation))
 		rot_mat_in_base = np.dot(odom_to_base, rot_mat_in_odom)
-		rot_in_base = self.euler_from_mat(rot_mat_in_base)
+		rot_in_base = self.euler_from_mat(rot_mat_in_base, 0)
 		# controller
 		vx = self.kp_x * trans_in_base[0] * (trans_in_base[0] + self.offset[0] > 0.10)
 		vy = self.kp_y * trans_in_base[1] * (abs(trans_in_base[1] - self.offset[1]) > 0.005)
@@ -200,15 +204,17 @@ class Filter():
 		self.vel.linear.x = self.limit_check(vx, self.x_max, self.x_min)
 		self.vel.linear.y = self.limit_check(vy, self.y_max, self.y_min)
 		self.vel.angular.z = self.limit_check(vtheta, None, self.angular_min)
-		print(trans_in_base[0] + self.offset[0], trans_in_base[1] + self.offset[1], np.degrees(rot_in_base[2] - self.offset[2]))
-		if( not (self.vel.linear.x + self.vel.linear.y + self.vel.angular.z)):
+		#print(trans_in_base[0] + self.offset[0], trans_in_base[1] + self.offset[1], np.degrees(rot_in_base[2] - self.offset[2]))
+		if( not (abs(self.vel.linear.x) + abs(self.vel.linear.y) + abs(self.vel.angular.z))):
 			print("Connection established.")
+			print(self.vel.linear.x + self.vel.linear.y + self.vel.angular.z)
 			rospy.set_param('docking', False)
 		self.vel_pub.publish(self.vel)
+		print("Vel published.")
 
 	# visualization of transformed marker pose
 	def visualize(self, position_vec, rot_mat):
-		q = self.quaternion_from_mat(rot_mat)
+		q = self.quaternion_from_mat(rot_mat, euler_from_quaternion(self.quaternion)[2])
 		mkr_pose_msg = PoseStamped()
 		# give pose-msg the same stamp with mkr-msg
 		mkr_pose_msg.header.stamp = self.marker_pose.header.stamp
@@ -245,7 +251,7 @@ if __name__ == '__main__':
 			# my_filter.visualize([my_filter.marker_pose.pose.position.x, my_filter.marker_pose.pose.position.y, my_filter.marker_pose.pose.position.z], my_filter.mkr_mat_corrected)
 			# sliding window for both translation and rotation
 			translation = my_filter.trans_marker_in_odom
-			rotation = my_filter.euler_from_mat(my_filter.rot_marker_in_odom)
+			rotation = my_filter.euler_from_mat(my_filter.rot_marker_in_odom, euler_from_quaternion(my_filter.quaternion)[2])
 			translation_filtered = my_filter.sw_filter(translation, my_filter.translation_window, 15, False)
 			rotation_filtered = my_filter.sw_filter(rotation, my_filter.rotation_window, 15, True)
 			rot_mat_filtered = my_filter.mat_from_euler(rotation_filtered)
