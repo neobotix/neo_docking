@@ -156,15 +156,18 @@ class Filter():
 
 	# callback function for odometry
 	def odom_callback(self, odom):
-		if(odom.header.stamp == self.marker_pose.header.stamp):
-			self.translation = [odom.pose.pose.position.x, odom.pose.pose.position.y, odom.pose.pose.position.z]
-			self.quaternion = [odom.pose.pose.orientation.x, odom.pose.pose.orientation.y, odom.pose.pose.orientation.z, odom.pose.pose.orientation.w]
-			euler = euler_from_quaternion(self.quaternion)
-			mat = self.mat_from_euler(euler)
-			self.base_to_odom = np.array(mat)
+		#if(abs(odom.header.stamp - self.marker_pose.header.stamp)<rospy.Duration(0.05)):
+		
+		self.translation = [odom.pose.pose.position.x, odom.pose.pose.position.y, odom.pose.pose.position.z]
+		self.quaternion = [odom.pose.pose.orientation.x, odom.pose.pose.orientation.y, odom.pose.pose.orientation.z, odom.pose.pose.orientation.w]
+		euler = euler_from_quaternion(self.quaternion)
+		mat = self.mat_from_euler(euler)
+		self.base_to_odom = np.array(mat)
+		if((odom.header.stamp - self.marker_pose.header.stamp) < rospy.Duration(0.08)):
 			trans_marker_in_base = [self.marker_pose.pose.position.x + 0.228, self.marker_pose.pose.position.y - 0.015, self.marker_pose.pose.position.z + 0.461]
 			self.trans_marker_in_odom = np.add(np.dot(self.base_to_odom, trans_marker_in_base), self.translation)
 			self.rot_marker_in_odom = np.dot(self.base_to_odom, self.mkr_mat_corrected)
+		if(self.marker_pose.header.stamp and len(self.trans_marker_in_odom)):		
 			# wrapping marker_in_odom into rosmsg for visualization
 			self.visualize(self.trans_marker_in_odom, self.rot_marker_in_odom)
 			'''
@@ -186,7 +189,7 @@ class Filter():
 			pass
 		elif(uper and abs(vel)>uper):
 			vel = np.sign(vel) * uper
-		elif(abs(vel)<lower):
+		elif(lower and abs(vel)<lower):
 			vel = np.sign(vel) * lower
 		return vel
 
@@ -197,20 +200,24 @@ class Filter():
 		rot_mat_in_base = np.dot(odom_to_base, rot_mat_in_odom)
 		rot_in_base = self.euler_from_mat(rot_mat_in_base, 0)
 		# controller
-		vx = self.kp_x * trans_in_base[0] * (trans_in_base[0] + self.offset[0] > 0.10)
-		vy = self.kp_y * trans_in_base[1] * (abs(trans_in_base[1] - self.offset[1]) > 0.005)
-		vtheta = self.kp_theta * rot_in_base[2]	* (abs(np.degrees(rot_in_base[2] - self.offset[2])) > 0.5)
-		# publish velocity to robot
-		self.vel.linear.x = self.limit_check(vx, self.x_max, self.x_min)
-		self.vel.linear.y = self.limit_check(vy, self.y_max, self.y_min)
-		self.vel.angular.z = self.limit_check(vtheta, None, self.angular_min)
-		#print(trans_in_base[0] + self.offset[0], trans_in_base[1] + self.offset[1], np.degrees(rot_in_base[2] - self.offset[2]))
-		if( not (abs(self.vel.linear.x) + abs(self.vel.linear.y) + abs(self.vel.angular.z))):
+		vx = self.kp_x * (trans_in_base[0] + self.offset[0]) * (abs(trans_in_base[0] + self.offset[0]) > 0.20)
+		vy = self.kp_y * trans_in_base[1] * (abs(trans_in_base[1] + self.offset[1]) > 0.003)
+		vtheta = self.kp_theta * rot_in_base[2]	* (abs(np.degrees(rot_in_base[2] + self.offset[2])) > 0.5)
+		# publish velocity to robot	
+		'''	
+		self.vel.linear.x = 0.9*self.vel.linear.x + 0.1*self.limit_check(vx, self.x_max, None)
+		self.vel.linear.y = 0.8*self.vel.linear.y + 0.2*self.limit_check(vy, self.y_max, None)
+		self.vel.angular.z = 0.9*self.vel.angular.z + 0.1*self.limit_check(vtheta, None, self.angular_min)
+		'''	
+		self.vel.linear.x = self.limit_check(vx, self.x_max, None)
+		self.vel.linear.y = self.limit_check(vy, self.y_max, None)
+		self.vel.angular.z = self.limit_check(vtheta, None, self.angular_min)	
+				
+		#print(trans_in_base[0] + self.offset[0], trans_in_base[1] + self.offset[1], np.degrees(rot_in_base[2] + self.offset[2]))
+		if( (abs(self.vel.linear.x) + abs(self.vel.linear.y) + abs(self.vel.angular.z)) < 0.0005):
 			print("Connection established.")
-			print(self.vel.linear.x + self.vel.linear.y + self.vel.angular.z)
 			rospy.set_param('docking', False)
 		self.vel_pub.publish(self.vel)
-		print("Vel published.")
 
 	# visualization of transformed marker pose
 	def visualize(self, position_vec, rot_mat):
@@ -255,7 +262,6 @@ if __name__ == '__main__':
 			translation_filtered = my_filter.sw_filter(translation, my_filter.translation_window, 15, False)
 			rotation_filtered = my_filter.sw_filter(rotation, my_filter.rotation_window, 15, True)
 			rot_mat_filtered = my_filter.mat_from_euler(rotation_filtered)
-			#my_filter.visualize(translation_filtered, rot_mat_filtered)
 			my_filter.dock(translation_filtered, rot_mat_filtered)
 
 		my_filter.rate.sleep()
