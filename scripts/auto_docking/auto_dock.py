@@ -133,9 +133,7 @@ class Filter():
 		return mkr_rot_mat_corrected
 
 	# sliding window
-	# trans_or_rot = False for filtering translation
-	# trans_or_rot = True for filtering rotation
-	def sw_filter(self, data, window, size, trans_or_rot):
+	def sw_filter(self, data, window, size):
 		window.append(data)
 		if(len(window)>size):
 			window.pop(0)
@@ -191,7 +189,6 @@ class Filter():
 		self.vel.angular.z = 0.7*self.vel.angular.z + 0.3*self.vel_vec[2]
 		if(len(self.translation_window)==self.window_size and rospy.get_param('docking')):
 			self.vel_pub.publish(self.vel)
-			#print(self.vel)
 
 	# drive robot to marker
 	def dock(self, trans_in_odom, rot_mat_in_odom):
@@ -201,24 +198,26 @@ class Filter():
 		rot_in_base = self.euler_from_mat(rot_mat_in_base, 0)
 		if(self.window_size == 15):
 			goal = 0.40
-			tolerence = 0.005
+			tolerance = 0.005
+			kp_y = self.kp_y
 		else:
 			goal = 0.10
-			tolerence = 0.001
+			tolerance = 0.001
+			kp_y = 0.8 * self.kp_y
 		# controller
 		vx = self.kp_x * (trans_in_base[0] + self.offset[0] + goal) * (abs(trans_in_base[0] + self.offset[0] + goal) > 0.01)
-		vy = self.kp_y * trans_in_base[1] * (abs(trans_in_base[1] + self.offset[1]) > tolerence)
-		vtheta = self.kp_theta * rot_in_base[2]	* (abs(np.degrees(rot_in_base[2] + self.offset[2])) > 50*tolerence)
+		vy = self.kp_y * trans_in_base[1] * (abs(trans_in_base[1] + self.offset[1]) > tolerance)
+		vtheta = self.kp_theta * rot_in_base[2]	* (abs(np.degrees(rot_in_base[2] + self.offset[2])) > 50*tolerance)
 		# restore velocities into member self.vel_vec
 		self.vel_vec[0] = self.limit_check(vx, self.x_max, None)
 		self.vel_vec[1] = self.limit_check(vy, self.y_max, None)
-		self.vel_vec[2] = self.limit_check(vtheta, None, None)
+		self.vel_vec[2] = vtheta
 		# TODO: choose another threshold for 1st part
 		if (abs(self.vel_vec).sum() < 0.001):
-			if(not self.window_size == 90):
+		# if(abs(self.vel_vec[:2]).sum() + np.degrees(self.vel_vec[2]) < 0.001):
+			if(not self.window_size == 100):
 				rospy.loginfo("Robot pose corrected.")
-				self.window_size = 90
-				# pause here if the reorganize of wheel orientation is still malfunctioning
+				self.window_size = 100
 				self.reset_wheels()
 			else:
 				self.window_size = 15
@@ -227,6 +226,10 @@ class Filter():
 				self.reset_wheels()
 				rospy.loginfo("Process completed, error:")
 				print(trans_in_base[0]+self.offset[0]+goal, trans_in_base[1], np.degrees(rot_in_base[2]))
+				# collecting data
+				rospy.set_param('diff_x', float(trans_in_base[0]+self.offset[0]+goal))
+				rospy.set_param('diff_y', float(trans_in_base[1]))
+				rospy.set_param('diff_theta', float(np.degrees(rot_in_base[2])))
 				rospy.set_param('docking', False)
 
 	# visualization of transformed marker pose
@@ -269,8 +272,8 @@ if __name__ == '__main__':
 			# sliding window for both translation and rotation
 			translation = my_filter.trans_marker_in_odom
 			rotation = my_filter.euler_from_mat(my_filter.rot_marker_in_odom, euler_from_quaternion(my_filter.quaternion)[2])
-			translation_filtered = my_filter.sw_filter(translation, my_filter.translation_window, my_filter.window_size, False)
-			rotation_filtered = my_filter.sw_filter(rotation, my_filter.rotation_window, my_filter.window_size, True)
+			translation_filtered = my_filter.sw_filter(translation, my_filter.translation_window, my_filter.window_size)
+			rotation_filtered = my_filter.sw_filter(rotation, my_filter.rotation_window, my_filter.window_size)
 			rot_mat_filtered = my_filter.mat_from_euler(rotation_filtered)
 			my_filter.dock(translation_filtered, rot_mat_filtered)
 		my_filter.rate.sleep()
