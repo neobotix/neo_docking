@@ -4,6 +4,7 @@ import time
 import rospy
 import numpy as np
 from nav_msgs.msg import Odometry
+from neo_srvs.srv import ResetOmniWheels
 from neo_docking.srv import auto_docking
 from ar_track_alvar_msgs.msg import AlvarMarkers
 from geometry_msgs.msg import PoseStamped, Twist
@@ -19,6 +20,8 @@ class Filter():
 		self.rate = rospy.Rate(frequency)
 		rospy.set_param('docking', False)
 		server = rospy.Service(self.node_name, auto_docking, self.service_callback)
+		rospy.wait_for_service('/kinematics_omnidrive/reset_omni_wheels')
+		self.reset_wheels = rospy.ServiceProxy('/kinematics_omnidrive/reset_omni_wheels',  ResetOmniWheels)
 		self.mkr_pub = rospy.Publisher('ar_pose_filtered', PoseStamped, queue_size=1)
 		self.vel_pub = rospy.Publisher('cmd_vel', Twist, queue_size=1)
 		self.pose_sub = rospy.Subscriber('ar_pose_marker', AlvarMarkers, self.visual_callback)
@@ -54,21 +57,17 @@ class Filter():
 		#self.tolerance = rospy.get_param('/'+self.node_name+'/tolerance/y')
 		#self.angular_min = rospy.get_param('/'+self.node_name+'/velocity/angular/min')
 		# load markers into a list, as reference of detection
-		i = 0
 		self.defined_markers = []
-		while(True):
-			i += 1
-			try:
-				marker = rospy.get_param('/ar_track_alvar/marker_'+str(i))
-				marker = int(marker)
+		try:
+			markers = rospy.get_param('/ar_track_alvar/markers')
+			l = len(markers)
+			for marker in markers:
 				self.defined_markers.append(marker)
-			except:
-				l = len(self.defined_markers)
-				if(l):
-					rospy.loginfo(str(l)+" marker(s) loaded.")
-				else:
-					rospy.loginfo("No marker is defined.")
-				break
+			if(l):
+				rospy.loginfo(str(l)+" marker(s) loaded:"+str(self.defined_markers))
+				print(type(self.defined_markers[0]))
+		except:
+			rospy.loginfo("No marker is defined.")
 
 	# establish the rotation matrix from euler angle
 	def mat_from_euler(self, euler):
@@ -172,16 +171,6 @@ class Filter():
 			vel = np.sign(vel) * lower
 		return vel
 
-	# resetting the orientation of every wheel
-	def reset_wheels(self):
-		x = Twist()
-		null = Twist()
-		x.linear.x = 0.01
-		self.vel_pub.publish(x)
-		time.sleep(0.2)
-		self.vel_pub.publish(null)
-		time.sleep(0.5)
-
 	# callback function of timer, used for filtering velocities and sending them with 100Hz frequency
 	def low_pass_filter(self, timer):
 		self.vel.linear.x = 0.7*self.vel.linear.x + 0.3*self.vel_vec[0]
@@ -197,11 +186,11 @@ class Filter():
 		rot_mat_in_base = np.dot(odom_to_base, rot_mat_in_odom)
 		rot_in_base = self.euler_from_mat(rot_mat_in_base, 0)
 		if(self.window_size == 15):
-			goal = 0.40
+			goal = 0.35
 			tolerance = 0.005
 			kp_y = self.kp_y
 		else:
-			goal = 0.10
+			goal = 0.05
 			tolerance = 0.001
 			kp_y = 0.8 * self.kp_y
 		# controller
@@ -212,18 +201,17 @@ class Filter():
 		self.vel_vec[0] = self.limit_check(vx, self.x_max, None)
 		self.vel_vec[1] = self.limit_check(vy, self.y_max, None)
 		self.vel_vec[2] = vtheta
-		# TODO: choose another threshold for 1st part
 		if (abs(self.vel_vec).sum() < 0.001):
 		# if(abs(self.vel_vec[:2]).sum() + np.degrees(self.vel_vec[2]) < 0.001):
 			if(not self.window_size == 100):
 				rospy.loginfo("Robot pose corrected.")
 				self.window_size = 100
-				self.reset_wheels()
+				self.reset_wheels([0, 0, 0, 0])
 			else:
 				self.window_size = 15
 				self.translation_window = []
 				self.rotation_window = []
-				self.reset_wheels()
+				self.reset_wheels([0, 0, 0, 0])
 				rospy.loginfo("Process completed, error:")
 				print(trans_in_base[0]+self.offset[0]+goal, trans_in_base[1], np.degrees(rot_in_base[2]))
 				# collecting data
@@ -275,5 +263,5 @@ if __name__ == '__main__':
 			translation_filtered = my_filter.sw_filter(translation, my_filter.translation_window, my_filter.window_size)
 			rotation_filtered = my_filter.sw_filter(rotation, my_filter.rotation_window, my_filter.window_size)
 			rot_mat_filtered = my_filter.mat_from_euler(rotation_filtered)
-			my_filter.dock(translation_filtered, rot_mat_filtered)
+			# my_filter.dock(translation_filtered, rot_mat_filtered)
 		my_filter.rate.sleep()

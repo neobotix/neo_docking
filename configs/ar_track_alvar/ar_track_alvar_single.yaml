@@ -1,4 +1,2 @@
 ar_track_alvar:
-  marker_1: 2
-  marker_2: 8
-  marker_3: 10
+  markers: [2, 8, 10]
