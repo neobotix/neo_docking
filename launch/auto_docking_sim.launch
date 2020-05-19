@@ -1,7 +1,7 @@
 <?xml version='1.0'?>
 <launch>
 	<!-- Load Parameters -->
-	<rosparam file="$(find neo_docking)/configs/auto_docking/auto_docking.yaml" />
+	<rosparam file="$(find neo_docking)/configs/auto_docking/auto_docking_sim.yaml" />
 	<rosparam file="$(find neo_docking)/configs/auto_docking/stations.yaml" />
 	
 	<!-- Launch Node -->

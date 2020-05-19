@@ -9,12 +9,13 @@ auto_docking:
   velocity:
     linear:
       x:
-        max:     0.03
-        min:     0
+        max:     5
+        min:     0.15
       y:
-        max:     0.05
-        min:     0
+        max:     5
+        min:     0.15
     angular:
-        min:     0
+        min:     0.02
   tolerance:
     y:           0.003
+  

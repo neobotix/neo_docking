@@ -6,6 +6,7 @@
 
   <maintainer email="ros@neobotix.de">Neobotix</maintainer>
   <url type="website">http://www.neobotix-robots.com</url>
+  <license>BSD</license>
   <author>Zihao He</author>
   <author>Jan-Niklas Nieland</author>
 
