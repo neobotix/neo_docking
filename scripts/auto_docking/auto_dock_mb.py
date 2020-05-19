@@ -195,7 +195,7 @@ class Filter():
 		elif(self.window_size==45):
 			offset = 0.15 + self.offset[0]
 		else:
-			offset = 0.10 + self.offset[0]
+			offset = self.offset[0]
 		offset = -np.sign(self.cam_to_base.transform.translation.x) * offset
 		offset_vec = [[offset], [0], [0]]
 		rot_map_to_mkr = np.array(self.mat_from_euler(euler_from_quaternion([msg.pose.orientation.x, msg.pose.orientation.y, msg.pose.orientation.z, msg.pose.orientation.w])))
