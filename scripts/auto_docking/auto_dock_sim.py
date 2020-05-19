@@ -10,7 +10,6 @@ import tf2_geometry_msgs
 from nav_msgs.msg import Odometry
 from tf2_msgs.msg import TFMessage
 from neo_docking.srv import auto_docking
-from neo_srvs.srv import ResetOmniWheels
 from geometry_msgs.msg import PoseStamped, Twist
 from ar_track_alvar_msgs.msg import AlvarMarkers
 from actionlib_msgs.msg import GoalStatus as goal_status
@@ -53,8 +52,6 @@ class Filter():
 		self.client = actionlib.SimpleActionClient('/move_base', MoveBaseAction)
 		if(self.client.wait_for_server()):
 			rospy.loginfo("Action client server up.")
-		rospy.wait_for_service('/kinematics_omnidrive/reset_omni_wheels')
-		self.reset_wheels = rospy.ServiceProxy('/kinematics_omnidrive/reset_omni_wheels', ResetOmniWheels)
 		# configuration
 		# reading available markers
 		self.defined_markers = []
@@ -195,7 +192,7 @@ class Filter():
 		elif(self.window_size==45):
 			offset = 0.15 + self.offset[0]
 		else:
-			offset = self.offset[0]
+			offset = 0.10 + self.offset[0]
 		offset = -np.sign(self.cam_to_base.transform.translation.x) * offset
 		offset_vec = [[offset], [0], [0]]
 		rot_map_to_mkr = np.array(self.mat_from_euler(euler_from_quaternion([msg.pose.orientation.x, msg.pose.orientation.y, msg.pose.orientation.z, msg.pose.orientation.w])))
@@ -279,11 +276,9 @@ if __name__ == '__main__':
 				# if finished 1st stage, set window_size to 45 for 2nd stage.
 				if(my_filter.window_size == 30):
 					my_filter.window_size = 45
-					my_filter.reset_wheels([0, 0, 0, 0])
 				# if finished 2nd stage, set window_size to 50 for 3rd stage.
 				elif(my_filter.window_size == 45):
 					my_filter.window_size = 50
-					my_filter.reset_wheels([0, 0, 0, 0])
 				# if already 3rd stage, end the process and reset params
 				else:
 					my_filter.window_size = 30
