@@ -1,11 +1,4 @@
 # neo_docking
+This package provides support for the automated docking process of our omnidirectional mobile robots. 
 
-## Dependencies
-
-ar_track_alvar (https://github.com/neobotix/ar_track_alvar.git --branch melodic-devel)
-
-## Documentation
-
-Tutrial: https://docs.neobotix.de/display/TUT/Using+neo_docking
-
-Package: https://docs.neobotix.de/display/ROSPKGS/neo_docking
+Please visit [our documentation]https://docs.neobotix.de/display/TUT/Using+neo_docking to know more about the setup and the usage of this package.
