@@ -1,7 +1,8 @@
 auto_docking:
+  differential_drive: True
   kp:
-    x:           0.3
-    y:           1.5
+    # x:           0.3
+    x:           0.6
     theta:       0.5
     x_fine:      0.5
     y_fine:      3.0

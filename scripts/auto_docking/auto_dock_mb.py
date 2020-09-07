@@ -37,6 +37,8 @@ class Filter():
 		self.marker_in_odom = PoseStamped()
 		self.mkr_in_map_msg = PoseStamped()
 		self.mkr_mat_corrected = None
+		self.diff = rospy.get_param('auto_docking/differential_drive')
+		self.p_gain = rospy.get_param('auto_docking/kp/x')
 		self.marker_list = []
 		# data&params for sliding window
 		self.window_size = 30
@@ -51,10 +53,11 @@ class Filter():
 		self.pose_sub = rospy.Subscriber('ar_pose_marker', AlvarMarkers, self.visual_callback)
 		self.odom_sub = rospy.Subscriber('odom', Odometry, self.odom_callback)
 		self.client = actionlib.SimpleActionClient('/move_base', MoveBaseAction)
-		if(self.client.wait_for_server()):
-			rospy.loginfo("Action client server up.")
-		rospy.wait_for_service('/kinematics_omnidrive/reset_omni_wheels')
-		self.reset_wheels = rospy.ServiceProxy('/kinematics_omnidrive/reset_omni_wheels', ResetOmniWheels)
+		if(self.diff == False):
+			if(self.client.wait_for_server()):
+				rospy.loginfo("Action client server up.")
+			rospy.wait_for_service('/kinematics_omnidrive/reset_omni_wheels')
+			self.reset_wheels = rospy.ServiceProxy('/kinematics_omnidrive/reset_omni_wheels', ResetOmniWheels)
 		# configuration
 		# reading available markers
 		self.defined_markers = []
@@ -210,14 +213,33 @@ class Filter():
 		return offset_msg
 
 	# drive robot to dock
-	def dock(self, trans_in_map, rot_mat_in_map):
+	def dock(self, trans_in_map, rot_mat_in_map, stage):
+		if(self.diff==False):
+			rospy.loginfo("Performing docking for Omni-directional robot.")
+		else:
+			rospy.loginfo("Performing docking for differential-drive robot.")
+		error = 0	
 		filtered_pose_msg = self.msg_wrapper(trans_in_map, rot_mat_in_map, 'map', self.mkr_in_map_msg.header.stamp)
 		offset = self.calculate_goal(filtered_pose_msg)
-		goal = MoveBaseGoal()
-		goal.target_pose.header.frame_id = 'map'
-		goal.target_pose.pose = offset.pose
-		goal.target_pose.pose.position.z = 0
-		self.client.send_goal(goal)
+		if(stage == 1 or stage == 2 or (stage == 3 and self.diff == False)):
+			goal = MoveBaseGoal()
+			goal.target_pose.header.frame_id = 'map'
+			goal.target_pose.pose = offset.pose
+			goal.target_pose.pose.position.z = 0
+			self.client.send_goal(goal)
+			goal_reached = False
+			return goal_reached
+		else:
+			cmd_vel = Twist()
+			error = self.marker_pose.pose.position.x - 0.25
+			while error >= 0.01:
+				error = self.marker_pose.pose.position.x - 0.25
+				cmd_vel.linear.x = self.p_gain*error
+				self.vel_pub.publish(cmd_vel)
+			cmd_vel.linear.x = 0
+			self.vel_pub.publish(cmd_vel)
+			goal_reached = True
+			return goal_reached
 
 	# wrapper of pose_msg
 	def msg_wrapper(self, position_vec, rot_mat, frame_id, stamp):
@@ -255,6 +277,7 @@ class Filter():
 
 if __name__ == '__main__':
 	my_filter = Filter()
+	stage = 1
 	while(not rospy.is_shutdown()):
 		state = None
 		if(my_filter.mkr_in_map_msg.header.stamp and rospy.get_param('docking')):
@@ -264,13 +287,13 @@ if __name__ == '__main__':
 			filtered = my_filter.msg_wrapper(my_filter.translation_filtered, my_filter.rot_mat_filtered, 'map', my_filter.mkr_in_map_msg.header.stamp)
 			my_filter.mkr_pub.publish(filtered)
 			if (len(my_filter.translation_window) == my_filter.window_size):				
-				my_filter.dock(my_filter.translation_filtered, my_filter.rot_mat_filtered)
+				goal_reached = my_filter.dock(my_filter.translation_filtered, my_filter.rot_mat_filtered, stage)
 				rospy.loginfo("called dock.")
 				if(state):
 					state = None
 				else:				
 					state = my_filter.client.get_state()
-				while(not rospy.is_shutdown() and not (state == goal_status.SUCCEEDED)):
+				while(not rospy.is_shutdown() and not (state == goal_status.SUCCEEDED or goal_reached == True)):
 					state = my_filter.client.get_state()
 					my_filter.sw_operator()
 					filtered = my_filter.msg_wrapper(my_filter.translation_filtered, my_filter.rot_mat_filtered, 'map', my_filter.mkr_in_map_msg.header.stamp)
@@ -279,11 +302,15 @@ if __name__ == '__main__':
 				# if finished 1st stage, set window_size to 45 for 2nd stage.
 				if(my_filter.window_size == 30):
 					my_filter.window_size = 45
-					my_filter.reset_wheels([0, 0, 0, 0])
+					stage = 2
+					if(self.diff == False):
+						my_filter.reset_wheels([0, 0, 0, 0])
 				# if finished 2nd stage, set window_size to 50 for 3rd stage.
 				elif(my_filter.window_size == 45):
 					my_filter.window_size = 50
-					my_filter.reset_wheels([0, 0, 0, 0])
+					stage = 3
+					if(self.diff == False):
+						my_filter.reset_wheels([0, 0, 0, 0])
 				# if already 3rd stage, end the process and reset params
 				else:
 					my_filter.window_size = 30

@@ -1,6 +1,8 @@
 auto_docking:
+  differential_drive: True
   kp:
-    x:           0.3
+    # x:           0.3
+    x:           0.6 # Differential drive - CAUTION: PLEASE DO NOT GIVE HIGH VALUES. It might make the robot go at very high speed.
     y:           1.5
     theta:       0.5
     x_fine:      0.5
