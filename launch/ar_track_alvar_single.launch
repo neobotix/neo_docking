@@ -4,7 +4,7 @@
 	<rosparam command="delete" param="/ar_track_alvar/" />
 	<rosparam command="load" file="$(find neo_docking)/configs/ar_track_alvar/ar_track_alvar_single.yaml" />
 	<!-- Arguments for ar_track_alvar -->
-	<arg name="marker_size" default="7" />
+	<arg name="marker_size" default="5" />
 	<arg name="max_new_marker_error" default="0.1" />
 	<arg name="max_track_error" default="0.2" />
 	<arg name="cam_image_topic" default="/camera/depth_registered/points" />

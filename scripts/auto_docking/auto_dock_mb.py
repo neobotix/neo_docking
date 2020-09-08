@@ -231,9 +231,9 @@ class Filter():
 			return goal_reached
 		else:
 			cmd_vel = Twist()
-			error = self.marker_pose.pose.position.x - 0.25
+			error = self.marker_pose.pose.position.x - 0.2
 			while error >= 0.01:
-				error = self.marker_pose.pose.position.x - 0.25
+				error = self.marker_pose.pose.position.x - 0.2
 				cmd_vel.linear.x = self.p_gain*error
 				self.vel_pub.publish(cmd_vel)
 			cmd_vel.linear.x = 0
@@ -278,6 +278,7 @@ class Filter():
 if __name__ == '__main__':
 	my_filter = Filter()
 	stage = 1
+	diff = rospy.get_param('auto_docking/differential_drive')
 	while(not rospy.is_shutdown()):
 		state = None
 		if(my_filter.mkr_in_map_msg.header.stamp and rospy.get_param('docking')):
@@ -303,13 +304,13 @@ if __name__ == '__main__':
 				if(my_filter.window_size == 30):
 					my_filter.window_size = 45
 					stage = 2
-					if(self.diff == False):
+					if(diff == False):
 						my_filter.reset_wheels([0, 0, 0, 0])
 				# if finished 2nd stage, set window_size to 50 for 3rd stage.
 				elif(my_filter.window_size == 45):
 					my_filter.window_size = 50
 					stage = 3
-					if(self.diff == False):
+					if(diff == False):
 						my_filter.reset_wheels([0, 0, 0, 0])
 				# if already 3rd stage, end the process and reset params
 				else:
