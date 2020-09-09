@@ -41,6 +41,9 @@ class Filter():
 		self.mkr_mat_corrected = None
 		self.diff = rospy.get_param('auto_docking/differential_drive')
 		self.p_gain = rospy.get_param('auto_docking/kp/x')
+		self.max_vel_limit = rospy.get_param('auto_docking/max_vel_limit')
+		# WARNING: PLEASE DO NOT CHANGE THE BELOW VALUE (docking_pose) WITHOUT THE CONSULTATION FROM NEOBOTIX. 
+		self.undocking_pose = rospy.get_param('auto_docking/undocking_pose') # Safety is 50 cm for the robot to turn and do other actions
 		self.marker_list = []
 		# data&params for sliding window
 		self.window_size = 30
@@ -233,11 +236,11 @@ class Filter():
 			return goal_reached
 		else:
 			cmd_vel = Twist()
-			error = self.marker_pose.pose.position.x - 0.2
+			error = self.marker_pose.pose.position.x - self.offset[0]
 			while error >= 0.01:
-				error = self.marker_pose.pose.position.x - 0.2
-				if(self.p_gain*error>0.035):
-					cmd_vel.linear.x = 0.035
+				error = self.marker_pose.pose.position.x - self.offset[0]
+				if(self.p_gain*error > self.max_vel_limit):
+					cmd_vel.linear.x = self.max_vel_limit
 				else:
 					cmd_vel.linear.x = self.p_gain*error
 				self.vel_pub.publish(cmd_vel)
@@ -292,11 +295,11 @@ class Filter():
 				rospy.set_param('undocking', True)
 				rospy.loginfo("Service request received. Please wait, until undocking is done")
 				cmd_vel = Twist()
-				error = 0.5 - self.marker_pose.pose.position.x
+				error = self.undocking_pose - self.marker_pose.pose.position.x
 			while error >= 0.01:
-				error = 0.5 - self.marker_pose.pose.position.x
-				if(self.p_gain*-error<-0.035):
-					cmd_vel.linear.x = -0.035
+				error = self.undocking_pose - self.marker_pose.pose.position.x
+				if(self.p_gain*-error<-self.max_vel_limit):
+					cmd_vel.linear.x = -self.max_vel_limit
 				else:
 					cmd_vel.linear.x = self.p_gain*-error
 				self.vel_pub.publish(cmd_vel)
