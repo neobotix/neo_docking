@@ -236,7 +236,10 @@ class Filter():
 			error = self.marker_pose.pose.position.x - 0.2
 			while error >= 0.01:
 				error = self.marker_pose.pose.position.x - 0.2
-				cmd_vel.linear.x = self.p_gain*error
+				if(self.p_gain*error>0.035):
+					cmd_vel.linear.x = 0.035
+				else:
+					cmd_vel.linear.x = self.p_gain*error
 				self.vel_pub.publish(cmd_vel)
 			cmd_vel.linear.x = 0
 			self.vel_pub.publish(cmd_vel)
@@ -289,10 +292,13 @@ class Filter():
 				rospy.set_param('undocking', True)
 				rospy.loginfo("Service request received. Please wait, until undocking is done")
 				cmd_vel = Twist()
-				error = 0.3 - self.marker_pose.pose.position.x
+				error = 0.5 - self.marker_pose.pose.position.x
 			while error >= 0.01:
-				error = 0.3 - self.marker_pose.pose.position.x
-				cmd_vel.linear.x = self.p_gain*-error
+				error = 0.5 - self.marker_pose.pose.position.x
+				if(self.p_gain*-error<-0.035):
+					cmd_vel.linear.x = -0.035
+				else:
+					cmd_vel.linear.x = self.p_gain*-error
 				self.vel_pub.publish(cmd_vel)
 			cmd_vel.linear.x = 0
 			self.vel_pub.publish(cmd_vel)
