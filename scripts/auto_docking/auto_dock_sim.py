@@ -29,7 +29,9 @@ class Filter():
 		self.odom_to_map = self.tf_buffer.lookup_transform('map', 'odom', rospy.Time(0), rospy.Duration(1.0))
 		self.cam_to_base = self.tf_buffer.lookup_transform('base_link', 'camera_link', rospy.Time(0), rospy.Duration(1.0))
 		rospy.set_param('docking', False)
+		rospy.set_param('undocking', False)
 		server = rospy.Service(self.node_name, auto_docking, self.service_callback)
+		server_undocking = rospy.Service('auto_undocking', auto_docking, self.service_undocking_callback)
 		# variables and interface for service
 		self.STATION_NR = None
 		self.marker_pose = PoseStamped()
@@ -265,6 +267,29 @@ class Filter():
 				rospy.set_param('docking', True)
 				rospy.loginfo("Service request received.")
 				return "Service requested."
+		else:
+			return "Robot is occupied now, request rejected."
+
+	def service_undocking_callback(self, auto_docking):
+		docking_state = rospy.get_param('undocking')
+		if(not docking_state):
+			if(not auto_docking.station_nr in self.marker_list):
+				return "Marker "+str(auto_docking.station_nr)+" not detected, please make sure robot is in a feasible area."
+			else:
+				self.STATION_NR = auto_docking.station_nr
+				self.offset = [rospy.get_param('/'+self.node_name+'/model_'+str(self.STATION_NR)[0]+'/offset/x'), rospy.get_param('/'+self.node_name+'/model_'+str(self.STATION_NR)[0]+'/offset/y'), rospy.get_param('/'+self.node_name+'/model_'+str(self.STATION_NR)[0]+'/offset/theta')]
+				rospy.set_param('undocking', True)
+				rospy.loginfo("Service request received. Please wait, until undocking is done")
+				cmd_vel = Twist()
+				error = 0.4 - self.marker_pose.pose.position.x
+			while error >= 0.01:
+				error = 0.4 - self.marker_pose.pose.position.x
+				cmd_vel.linear.x = self.p_gain*-error
+				self.vel_pub.publish(cmd_vel)
+			cmd_vel.linear.x = 0
+			self.vel_pub.publish(cmd_vel)
+			rospy.loginfo("Undocking is completed")	
+			rospy.set_param('undocking', False)
 		else:
 			return "Robot is occupied now, request rejected."
 
