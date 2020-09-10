@@ -1,7 +1,7 @@
 auto_docking:
   model_1:
     offset:
-      x:      0.409
+      x:      0.16 # WARNING: PLEASE USE THE COMPANY SPECIFIED VALUE
       y:      0
       theta:  0
     functionality:      'charging'
