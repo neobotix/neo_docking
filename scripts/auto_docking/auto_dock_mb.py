@@ -199,9 +199,9 @@ class Filter():
 	# calculate the current goal according to visual feedback and pose of robot
 	def calculate_goal(self, msg):
 		if(self.window_size==30):
-			offset = 0.30 + self.offset[0]
+			offset = 0.30 + self.offset[0] + self.cam_to_base.transform.translation.x
 		elif(self.window_size==45):
-			offset = 0.15 + self.offset[0]
+			offset = 0.15 + self.offset[0] + self.cam_to_base.transform.translation.x
 		else:
 			offset = self.offset[0]
 		offset = -np.sign(self.cam_to_base.transform.translation.x) * offset
@@ -290,8 +290,6 @@ class Filter():
 			if(not auto_docking.station_nr in self.marker_list):
 				return "Marker "+str(auto_docking.station_nr)+" not detected, please make sure robot is in a feasible area."
 			else:
-				self.STATION_NR = auto_docking.station_nr
-				self.offset = [rospy.get_param('/'+self.node_name+'/model_'+str(self.STATION_NR)[0]+'/offset/x'), rospy.get_param('/'+self.node_name+'/model_'+str(self.STATION_NR)[0]+'/offset/y'), rospy.get_param('/'+self.node_name+'/model_'+str(self.STATION_NR)[0]+'/offset/theta')]
 				rospy.set_param('undocking', True)
 				rospy.loginfo("Service request received. Please wait, until undocking is done")
 				cmd_vel = Twist()
@@ -357,7 +355,10 @@ if __name__ == '__main__':
 					rospy.set_param('diff_x', float(error_linear[0]))
 					rospy.set_param('diff_y', float(my_filter.marker_pose.pose.position.y - 0.0175))
 					rospy.set_param('diff_theta', float(error_angular))
+					# Resetting the params
 					rospy.set_param('docking', False)
+					stage = 1
+					goal_reached = False
 				my_filter.translation_window = []
 				my_filter.quaternion_window = []
 		my_filter.rate.sleep()
