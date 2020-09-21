@@ -59,6 +59,7 @@ find_package(OpenCV)
 add_service_files(
    FILES
    auto_docking.srv
+   auto_undocking.srv
 )
 
 ## Generate actions in the 'action' folder
