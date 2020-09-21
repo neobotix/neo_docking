@@ -279,9 +279,9 @@ class Filter():
 				self.offset = [rospy.get_param('/'+self.node_name+'/model_'+str(self.STATION_NR)[0]+'/offset/x'), rospy.get_param('/'+self.node_name+'/model_'+str(self.STATION_NR)[0]+'/offset/y'), rospy.get_param('/'+self.node_name+'/model_'+str(self.STATION_NR)[0]+'/offset/theta')]
 				rospy.set_param('docking', True)
 				rospy.loginfo("Service request received.")
-				return "Service requested."
+				return "Docking request recieved !"
 		else:
-			return "Robot is occupied now, request rejected."
+			return "Robot is occupied now, request rejected !"
 
 		# callback function of service /auto_docking
 	def service_undocking_callback(self, auto_docking):
@@ -305,8 +305,9 @@ class Filter():
 			self.vel_pub.publish(cmd_vel)
 			rospy.loginfo("Undocking is completed")	
 			rospy.set_param('undocking', False)
+			return "Undocking request recieved !"
 		else:
-			return "Robot is occupied now, request rejected."
+			return "Robot is occupied now, request rejected !"
 
 if __name__ == '__main__':
 	my_filter = Filter()
