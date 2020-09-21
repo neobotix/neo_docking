@@ -352,7 +352,7 @@ if __name__ == '__main__':
 					error_linear = np.subtract(my_filter.translation_filtered, my_filter.base_in_map_translation)
 					error_angular = np.degrees(my_filter.rotation_filtered[2] - euler_from_quaternion(my_filter.base_in_map_quaternion)[2])
 					rospy.loginfo("Connection established with error:")
-					print(error_linear[0] - my_filter.offset[0],my_filter.marker_pose.pose.position.y - 0.0175, error_angular)
+					print(my_filter.marker_pose.pose.position.x - my_filter.offset[0],my_filter.marker_pose.pose.position.y - 0.0175, error_angular)
 					rospy.set_param('diff_x', float(error_linear[0]))
 					rospy.set_param('diff_y', float(my_filter.marker_pose.pose.position.y - 0.0175))
 					rospy.set_param('diff_theta', float(error_angular))
