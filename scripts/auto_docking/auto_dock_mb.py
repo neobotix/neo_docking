@@ -279,9 +279,9 @@ class Filter():
 				self.offset = [rospy.get_param('/'+self.node_name+'/model_'+str(self.STATION_NR)[0]+'/offset/x'), rospy.get_param('/'+self.node_name+'/model_'+str(self.STATION_NR)[0]+'/offset/y'), rospy.get_param('/'+self.node_name+'/model_'+str(self.STATION_NR)[0]+'/offset/theta')]
 				rospy.set_param('docking', True)
 				rospy.loginfo("Service request received.")
-				return "Service requested."
+				return "Docking request recieved !"
 		else:
-			return "Robot is occupied now, request rejected."
+			return "Robot is occupied now, request rejected !"
 
 		# callback function of service /auto_docking
 	def service_undocking_callback(self, auto_docking):
@@ -305,8 +305,9 @@ class Filter():
 			self.vel_pub.publish(cmd_vel)
 			rospy.loginfo("Undocking is completed")	
 			rospy.set_param('undocking', False)
+			return "Undocking request recieved !"
 		else:
-			return "Robot is occupied now, request rejected."
+			return "Robot is occupied now, request rejected !"
 
 if __name__ == '__main__':
 	my_filter = Filter()
@@ -351,7 +352,7 @@ if __name__ == '__main__':
 					error_linear = np.subtract(my_filter.translation_filtered, my_filter.base_in_map_translation)
 					error_angular = np.degrees(my_filter.rotation_filtered[2] - euler_from_quaternion(my_filter.base_in_map_quaternion)[2])
 					rospy.loginfo("Connection established with error:")
-					print(error_linear[0] - my_filter.offset[0],my_filter.marker_pose.pose.position.y - 0.0175, error_angular)
+					print(my_filter.marker_pose.pose.position.x - my_filter.offset[0],my_filter.marker_pose.pose.position.y - 0.0175, error_angular)
 					rospy.set_param('diff_x', float(error_linear[0]))
 					rospy.set_param('diff_y', float(my_filter.marker_pose.pose.position.y - 0.0175))
 					rospy.set_param('diff_theta', float(error_angular))
