@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 import rospy
 from neo_docking.srv import auto_docking, auto_undocking
 import time
