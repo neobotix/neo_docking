@@ -284,8 +284,9 @@ class Filter():
 				error = 0.4 - self.marker_pose.pose.position.x
 			while error >= 0.01:
 				error = 0.4 - self.marker_pose.pose.position.x
-				cmd_vel.linear.x = self.p_gain*-error
+				cmd_vel.linear.x = self.p_gain*-error*np.sign(self.cam_to_base.transform.translation.x)
 				self.vel_pub.publish(cmd_vel)
+				rospy.loginfo(error)
 			cmd_vel.linear.x = 0
 			self.vel_pub.publish(cmd_vel)
 			rospy.loginfo("Undocking is completed")	
