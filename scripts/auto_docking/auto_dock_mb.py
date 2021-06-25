@@ -27,6 +27,7 @@ class Filter():
 		self.rate = rospy.Rate(frequency)
 		self.tf_buffer = tf2_ros.Buffer(rospy.Duration(1200.0))
 		listener = tf2_ros.TransformListener(self.tf_buffer)
+		self.defined_markers = []
 		self.odom_to_map = self.tf_buffer.lookup_transform('map', 'odom', rospy.Time(0), rospy.Duration(1.0))
 		self.cam_to_base = self.tf_buffer.lookup_transform('base_link', 'camera_link', rospy.Time(0), rospy.Duration(1.0))
 		rospy.set_param('docking', False)
@@ -65,7 +66,6 @@ class Filter():
 			self.reset_wheels = rospy.ServiceProxy('/kinematics_omnidrive/reset_omni_wheels', ResetOmniWheels)
 		# configuration
 		# reading available markers
-		self.defined_markers = []
 		try:
 			markers = rospy.get_param('/ar_track_alvar/markers')
 			l = len(markers)
