@@ -249,10 +249,10 @@ class Filter():
 		pose_msg.pose.position.x = position_vec[0]
 		pose_msg.pose.position.y = position_vec[1]
 		pose_msg.pose.position.z = position_vec[2]
-		pose_msg.pose.orientation.x = q[0]
-		pose_msg.pose.orientation.y = q[1]
-		pose_msg.pose.orientation.z = q[2]
-		pose_msg.pose.orientation.w = q[3]
+		pose_msg.pose.orientation.x = 0
+		pose_msg.pose.orientation.y = 0
+		pose_msg.pose.orientation.z = 0
+		pose_msg.pose.orientation.w = 1
 		return pose_msg
 
 	# callback function of service /auto_docking
